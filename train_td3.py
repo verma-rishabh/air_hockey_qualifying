@@ -206,7 +206,7 @@ class train(AirHockeyChallengeWrapper):
 
             # # Train agent after collecting sufficient data
             if t >= self.conf.agent.start_timesteps:
-                critic_loss,actor_loss=self.policy.train(self.replay_buffer, self.conf.agent.batch_size)
+                actor_loss,critic_loss=self.policy.train(self.replay_buffer, self.conf.agent.batch_size)
 
             if done or episode_timesteps > self.conf.agent.max_episode_steps: 
                 # +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
