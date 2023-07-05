@@ -3,7 +3,7 @@ agent:
     policy: exp-v03-TD3-v1               
     seed: 0              
     start_timesteps: 2e3
-    eval_freq: 1000
+    eval_freq: 5000
     max_timesteps: 5e7
     expl_noise: 0.1            
     batch_size: 256
@@ -12,7 +12,8 @@ agent:
     policy_noise: 0.2             
     noise_clip: 0.5              
     policy_freq: 2       
+    max_episode_steps: 200
     save_model: True     
-    load_model: "default"                             
-    dump_dir : /run/media/luke/Data/uni/SS2023/DL Lab/Project/qualifying/td3_exp3
+    load_model: ""                             
+    dump_dir : /run/media/luke/Data/uni/SS2023/DL Lab/Project/qualifying/V2/td3
     file_name : ${agent.policy}_${env}_${agent.seed}

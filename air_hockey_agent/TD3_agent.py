@@ -3,6 +3,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from air_hockey_challenge.framework.agent_base import AgentBase
+from omegaconf import OmegaConf
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -35,12 +37,12 @@ class Critic(nn.Module):
 		# Q1 architecture
 		self.l1 = nn.Linear(state_dim + action_dim, 256)
 		self.l2 = nn.Linear(256, 256)
-		self.l3 = nn.Linear(256, 1)
+		self.l3 = nn.Linear(256, action_dim)
 
 		# Q2 architecture
 		self.l4 = nn.Linear(state_dim + action_dim, 256)
 		self.l5 = nn.Linear(256, 256)
-		self.l6 = nn.Linear(256, 1)
+		self.l6 = nn.Linear(256, action_dim)
 
 
 	def forward(self, state, action):
@@ -65,19 +67,33 @@ class Critic(nn.Module):
 		return q1
 
 
-class TD3(object):
+class TD3_agent(AgentBase):
 	def __init__(
 		self,
-		state_dim,
-		action_dim,
-		max_action,
+		env_info,
+		agent_id,
 		discount=0.99,
 		tau=0.005,
 		policy_noise=0.2,
 		noise_clip=0.5,
 		policy_freq=2
 	):
+		super().__init__(env_info, agent_id)
+		conf = OmegaConf.load('train_td3.yaml')
 
+		state_dim = env_info["rl_info"].observation_space.shape[0]
+		action_dim = env_info["rl_info"].action_space.shape[0]
+		pos_max = env_info['robot']['joint_pos_limit'][1]
+		vel_max = env_info['robot']['joint_vel_limit'][1] 
+		max_ = np.stack([pos_max,vel_max],dtype=np.float32)
+		max_action  = max_.reshape(14,)
+		max_action = torch.from_numpy(max_action).to(device)
+		discount = conf.agent.discount
+		tau=conf.agent.tau
+		policy_noise=conf.agent.policy_noise
+		noise_clip=conf.agent.noise_clip
+		policy_freq=conf.agent.policy_freq
+		
 		self.actor = Actor(state_dim, action_dim, max_action).to(device)
 		self.actor_target = copy.deepcopy(self.actor)
 		self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=3e-4)
@@ -100,8 +116,16 @@ class TD3(object):
 		state = torch.FloatTensor(state.reshape(1, -1)).to(device)
 		return self.actor(state).cpu().data.numpy().flatten()
 
+	def draw_action(self, state):
+		state = torch.FloatTensor(state.reshape(1, -1)).to(device)
+		return self.actor(state).clamp(-self.max_action, self.max_action).cpu().\
+			data.numpy().reshape(2,7)
+
 
 	def train(self, replay_buffer, batch_size=256):
+		_actor_loss = np.nan
+		_critic_loss = np.nan
+
 		self.total_it += 1
 
 		# Sample replay buffer 
@@ -133,6 +157,8 @@ class TD3(object):
 		critic_loss.backward()
 		self.critic_optimizer.step()
 
+		_critic_loss = critic_loss.item()
+
 		# Delayed policy updates
 		if self.total_it % self.policy_freq == 0:
 
@@ -144,6 +170,8 @@ class TD3(object):
 			actor_loss.backward()
 			self.actor_optimizer.step()
 
+			_actor_loss = actor_loss.item()
+
 			# Update the frozen target models
 			for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
 				target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
@@ -151,6 +179,7 @@ class TD3(object):
 			for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
 				target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
+		return _actor_loss, _critic_loss
 
 	def save(self, filename):
 		torch.save(self.critic.state_dict(), filename + "_critic")

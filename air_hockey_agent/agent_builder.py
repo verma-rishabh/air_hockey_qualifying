@@ -1,3 +1,6 @@
+from air_hockey_agent.TD3_agent import TD3_agent 
+
+
 def build_agent(env_info, **kwargs):
     """
     Function where an Agent that controls the environments should be returned.
@@ -10,4 +13,6 @@ def build_agent(env_info, **kwargs):
          (AgentBase) An instance of the Agent
     """
 
-    raise NotImplementedError
+    agent = TD3_agent(env_info,agent_id=1)
+    # agent.load("models/default/DDPG-v3_air-hockey_0")
+    return agent
