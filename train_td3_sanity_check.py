@@ -128,15 +128,17 @@ class train(AirHockeyChallengeWrapper):
         return r
 
 
-    def _loss(self,next_state,action,reward):
+    def _loss(self,next_state,action,reward):                              #reward is loss calcularted for pos [1.0,0,des_height]
         desired_action = np.zeros((2,7))
         des_z = self.env_info['robot']['ee_desired_height']
-        ee_pos = self.policy.get_ee_pose(next_state)[0] 
+        # ee_pos = self.policy.get_ee_pose(next_state)[0] 
+        ee_pos = [0.78,0.5,0]
         ee_pos[2] = des_z
         
         # vel
         jac = jacobian(self.policy.robot_model, self.policy.robot_data,self.policy.get_joint_pos(next_state))
         ee_v = (jac@self.policy.get_joint_vel(next_state))[:3]
+        # ee_v  = [0,0,0]
         ee_v[2] = 0
         inv_jac = np.linalg.pinv(jac)
         desired_action[1,:] = ee_v@inv_jac.T[:3,:]
@@ -145,11 +147,11 @@ class train(AirHockeyChallengeWrapper):
         if success:                                         # if the confg. is possible
             desired_action[0,:] = desired_angles  
             loss = np.square(np.subtract(action, desired_action)).reshape(-1,)    #because its a reward and hence should be -ve                
-            reward -= loss/np.sum(loss)
+            reward = -loss/np.square(self.max_action)
         else:
             loss = desired_action.reshape(-1,)
             loss[:] = 1
-            reward  -= loss                                  # have to think about this
+            reward  = -loss                                  # have to think about this
         return reward
 
 
@@ -167,6 +169,7 @@ class train(AirHockeyChallengeWrapper):
                 action = self.policy.draw_action(np.array(state))
                 next_state, reward, done, info = self._step(action)
                 self.render()
+                print("reward",reward.sum())
                 avg_reward += reward
                 episode_timesteps+=1
                 state = next_state
