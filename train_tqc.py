@@ -3,7 +3,7 @@ import torch
 import argparse
 import os
 from air_hockey_challenge.framework.air_hockey_challenge_wrapper import AirHockeyChallengeWrapper
-from air_hockey_agent.agent_builder import build_agent
+from air_hockey_agent.agent_builder_tqc import build_agent
 import utils
 from torch.utils.tensorboard.writer import SummaryWriter
 from omegaconf import OmegaConf

@@ -13,59 +13,75 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Paper: https://arxiv.org/abs/1802.09477
 
 
-class Actor(nn.Module):
-	def __init__(self, state_dim, action_dim, max_action):
-		super(Actor, self).__init__()
+class Mlp(nn.Module):
+    def __init__(
+            self,
+            input_size,
+            hidden_sizes,
+            output_size
+    ):
+        super().__init__()
+        # TODO: initialization
+        self.fcs = []
+        in_size = input_size
+        for i, next_size in enumerate(hidden_sizes):
+            fc = nn.Linear(in_size, next_size)
+            self.add_module(f'fc{i}', fc)
+            self.fcs.append(fc)
+            in_size = next_size
+        self.last_fc = nn.Linear(in_size, output_size)
 
-		self.l1 = nn.Linear(state_dim, 128)
-		self.l2 = nn.Linear(128, 128)
-		self.l3 = nn.Linear(128, action_dim)
-		
-		self.max_action = max_action
-		
-
-	def forward(self, state):
-		a = F.relu(self.l1(state))
-		a = F.relu(self.l2(a))
-		return self.max_action * torch.tanh(self.l3(a))
+    def forward(self, input):
+        h = input
+        for fc in self.fcs:
+            h = F.relu(fc(h))
+        output = self.last_fc(h)
+        return output
 
 
 class Critic(nn.Module):
-	def __init__(self, state_dim, action_dim):
-		super(Critic, self).__init__()
+    def __init__(self, state_dim, action_dim, n_quantiles, n_nets):
+        super().__init__()
+        self.nets = []
+        self.n_quantiles = n_quantiles
+        self.n_nets = n_nets
+        for i in range(n_nets):
+            net = Mlp(state_dim + action_dim, [64, 64], n_quantiles)
+            self.add_module(f'qf{i}', net)
+            self.nets.append(net)
 
-		# Q1 architecture
-		self.l1 = nn.Linear(state_dim + action_dim, 128)
-		self.l2 = nn.Linear(128, 128)
-		self.l3 = nn.Linear(128, 1)
-
-		# Q2 architecture
-		self.l4 = nn.Linear(state_dim + action_dim, 128)
-		self.l5 = nn.Linear(128, 128)
-		self.l6 = nn.Linear(128, 1)
-
-
-	def forward(self, state, action):
-		sa = torch.cat([state, action], 1)
-
-		q1 = F.relu(self.l1(sa))
-		q1 = F.relu(self.l2(q1))
-		q1 = self.l3(q1)
-
-		q2 = F.relu(self.l4(sa))
-		q2 = F.relu(self.l5(q2))
-		q2 = self.l6(q2)
-		return q1, q2
+    def forward(self, state, action):
+        sa = torch.cat((state, action), dim=1)
+        quantiles = torch.stack(tuple(net(sa) for net in self.nets), dim=1)
+        return quantiles
 
 
-	def Q1(self, state, action):
-		sa = torch.cat([state, action], 1)
+class Actor(nn.Module):
+    def __init__(self, state_dim, action_dim,env_info,agent_id=1):
+        super().__init__()
+        self.action_dim = action_dim
+        self.net = Mlp(state_dim, [64,64], 2 * action_dim)
 
-		q1 = F.relu(self.l1(sa))
-		q1 = F.relu(self.l2(q1))
-		q1 = self.l3(q1)
-		return q1
+    def forward(self, obs):
+        mean, log_std = self.net(obs).split([self.action_dim, self.action_dim], dim=1)
+        log_std = log_std.clamp(*LOG_STD_MIN_MAX)
 
+        if self.training:
+            std = torch.exp(log_std)
+            tanh_normal = TanhNormal(mean, std)
+            action, pre_tanh = tanh_normal.rsample()
+            log_prob = tanh_normal.log_prob(pre_tanh)
+            log_prob = log_prob.sum(dim=1, keepdim=True)
+        else:  # deterministic eval without log_prob computation
+            action = torch.tanh(mean)
+            log_prob = None
+        return action, log_prob
+
+    def select_action(self, obs):
+        obs = torch.FloatTensor(obs).to(DEVICE)[None, :]
+        action, _ = self.forward(obs)
+        action = action[0].cpu().detach().numpy()
+        return action
 
 class TD3_agent(AgentBase):
 	def __init__(
