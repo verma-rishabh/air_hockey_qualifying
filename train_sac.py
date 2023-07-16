@@ -2,6 +2,7 @@
 import argparse
 import os
 import random
+import tqdm
 import sys
 import time
 from distutils.util import strtobool
@@ -14,14 +15,17 @@ import torch.nn.functional as F
 import torch.optim as optim
 # from stable_baselines3.common.buffers import ReplayBuffer
 from utils import ReplayBuffer
-
+import os
+import sys
+sys.path.remove('/Users/zahrapadar/Desktop/DL-LAB/project/air_hockey_challenge_local_warmup')
 from torch.utils.tensorboard import SummaryWriter
 from air_hockey_challenge.framework.agent_base import AgentBase
 from air_hockey_challenge.framework import AirHockeyChallengeWrapper
 from torch.utils.tensorboard import SummaryWriter
 sys.path.append('./air_hockey_agent')
 from sac_agent import SAC_Agent, SoftQNetwork, Actor
-
+from air_hockey_challenge.framework.evaluate_agent import evaluate
+from air_hockey_agent.agent_builder import build_agent
 def parse_args():
     # fmt: off
     parser = argparse.ArgumentParser()
@@ -42,17 +46,17 @@ def parse_args():
         help="the replay memory buffer size")
     parser.add_argument("--gamma", type=float, default=0.99,
         help="the discount factor gamma")
-    parser.add_argument("--tau", type=float, default=0.005,
+    parser.add_argument("--tau", type=float, default=0.01,
         help="target smoothing coefficient (default: 0.005)")
     parser.add_argument("--batch-size", type=int, default=256,
         help="the batch size of sample from the reply memory")
-    parser.add_argument("--learning-starts", type=int, default=10,#5e3,
+    parser.add_argument("--learning-starts", type=int, default=100,
         help="timestep to start learning")
     parser.add_argument("--policy-lr", type=float, default=3e-4,
         help="the learning rate of the policy network optimizer")
-    parser.add_argument("--q-lr", type=float, default=1e-3,
+    parser.add_argument("--q-lr", type=float, default=3e-4, #1e-3,
         help="the learning rate of the Q network network optimizer")
-    parser.add_argument("--policy-frequency", type=int, default=2,
+    parser.add_argument("--policy-frequency", type=int, default=1,
         help="the frequency of training policy (delayed)")
     parser.add_argument("--target-network-frequency", type=int, default=1, # Denis Yarats' implementation delays this by 2.
         help="the frequency of updates for the target nerworks")
@@ -74,14 +78,19 @@ def make_env(env_id, seed, custom_reward_function=None):
 
     return env
 
-def reward_mushroomrl(env, state, action, next_state):
-# print("calculating rewardd")
+def reward_mushroomrl(env,next_state, action):
+    
     r = 0
     mod_next_state = next_state                            # changing frame of puck pos (wrt origin)
     mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
-    absorbing = env.base_env.is_absorbing(mod_next_state)
-    puck_pos, puck_vel = env.base_env.get_puck(mod_next_state)                     # extracts from obs therefore robot frame
-    # print("puck_velocity", puck_vel)                    # extracts from obs therefore robot frame
+    absorbing = env.base_env.is_absorbing(copy.deepcopy(mod_next_state))
+    puck_pos, puck_vel = env.base_env.get_puck(copy.deepcopy(mod_next_state))
+    q = next_state[env.env_info['joint_pos_ids']]
+    dq = next_state[env.env_info['joint_vel_ids']]
+
+    c_ee = env.env_info['constraints'].get('ee_constr').fun(q, dq)
+    constraint_reward = -np.sum(c_ee) if np.any(c_ee>0) else 0                     # extracts from obs therefore robot frame
+
 
     ###################################################
     goal = np.array([0.974, 0])
@@ -100,19 +109,13 @@ def reward_mushroomrl(env, state, action, next_state):
     vec_puck_goal = (goal - puck_pos[:2]) / np.linalg.norm(goal - puck_pos[:2])
     has_hit = env.base_env._check_collision("puck", "robot_1/ee")
 
-    
-    ###################################################
-    
-    
-
     # If puck is out of bounds
     if absorbing:
         # If puck is in the opponent goal
         if (puck_pos[0] - env.env_info['table']['length'] / 2) > 0 and \
                 (np.abs(puck_pos[1]) - env.env_info['table']['goal_width']) < 0:
                 # print("puck_pos",puck_pos,"absorbing",absorbing)
-            r = 200
-
+                r = 200
     else:
         if not has_hit:
             ee_pos = env.base_env.get_ee()[0]                                     # tO check
@@ -141,20 +144,22 @@ def reward_mushroomrl(env, state, action, next_state):
 
     r -= 1e-3 * np.linalg.norm(action)
     
-    des_z = env.env_info['robot']['ee_desired_height']
+    des_z = env.base_env.env_info['robot']['ee_desired_height']
     tolerance = 0.02
 
-    # if abs(self.policy.get_ee_pose(next_state)[0][1])>0.519:         # should replace with env variables some day
-        #     r -=1 
-        # if (self.policy.get_ee_pose(next_state)[0][0])<0.536:
-        #     r -=1 
-        # if (self.policy.get_ee_pose(next_state)[0][2]-0.1)<des_z-tolerance*10 or (self.policy.get_ee_pose(next_state)[0][2]-0.1)>des_z+tolerance*10:
-        #     r -=1
-    return r    
+    # if abs(actor.get_ee_pose(copy.deepcopy(next_state))[0][1])>0.519:  # should replace with env variables some day
+    #     r -=0.1 
+    # if (actor.get_ee_pose(copy.deepcopy(next_state))[0][0])<0.536:
+    #     r -=0.1 
+    # if (actor.get_ee_pose(copy.deepcopy(next_state))[0][2])<des_z-tolerance*10 or (actor.get_ee_pose(copy.deepcopy(next_state))[0][2])>des_z+tolerance*10:
+    #     r -=0.1
+    # r += constraint_reward
+    return r
 
 
 if __name__ == "__main__":
     args = parse_args()
+
     timestamp = time.time()
     formatted_time = time.strftime("%d-%m-%Y %H:%M", time.localtime(timestamp))
 
@@ -170,26 +175,26 @@ if __name__ == "__main__":
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    torch.backends.cuda.deterministic = args.torch_deterministic
+    torch.backends.cudnn.deterministic = args.torch_deterministic
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    envs = make_env(args.env_id, args.seed, custom_reward_function=None)
+    env = make_env(args.env_id, args.seed, custom_reward_function=None)
 
-    env_info = envs.env_info
+    env_info = env.env_info
 
     state_dim = env_info["rl_info"].observation_space.low.shape[0]
     state_dim_ = env_info["rl_info"].observation_space.low.shape
 
     action_dim = env_info["rl_info"].action_space.low.shape[0]
     action_dim_ = (action_dim,)
-    state, done = envs.reset(), False #initial_state
+    state, done = env.reset(), False #initial_state
 
     action_space = np.concatenate((env_info["robot"]["joint_pos_limit"], 
                                   env_info["robot"]["joint_vel_limit"]), axis=1)
 
-    # max_action = float(envs.single_action_space.high[0])
+    # max_action = float(env.single_action_space.high[0])
     max_action = action_space[1,:]
     min_action = action_space[0,:]
 
@@ -209,14 +214,14 @@ if __name__ == "__main__":
 
     # Automatic entropy tuning
     if args.autotune:
-        target_entropy = -torch.prod(torch.Tensor(2 * (envs.env_info["rl_info"].action_space.low.shape[0])).to(device)).item()
+        target_entropy = -torch.prod(torch.Tensor(env.env_info["rl_info"].action_space.low.shape)).to(device).item()
         log_alpha = torch.zeros(1, requires_grad=True, device=device)
         alpha = log_alpha.exp().item()
         a_optimizer = optim.Adam([log_alpha], lr=args.q_lr)
     else:
         alpha = args.alpha
 
-    # envs.single_observation_space.dtype = np.float32
+    # env.single_observation_space.dtype = np.float32
     # env_info["rl_info"].action_space.low.dtype = np.float32
     # env_info["rl_info"].action_space.high.dtype = np.float32
 
@@ -224,34 +229,33 @@ if __name__ == "__main__":
 
     # rb = ReplayBuffer(
     #     args.buffer_size,
-    #     envs.single_observation_space,
-    #     envs.single_action_space,
+    #     env.single_observation_space,
+    #     env.single_action_space,
     #     device,
     #     handle_timeout_termination=True,
     # )
     start_time = time.time()
 
     # TRY NOT TO MODIFY: start the game
-    obs = envs.reset()
+    obs = env.reset()
     for global_step in range(args.total_timesteps):
+        # print(global_step)
         # ALGO LOGIC: put action logic here
         if global_step < args.learning_starts:
-            actions = torch.Tensor([random.uniform(min_action[i], max_action[i]) for i in range(action_dim)]).reshape(2,7)
-            # actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)])
+            action = torch.Tensor([random.uniform(min_action[i] * 0.95 , max_action[i]* 0.95) for i in range(action_dim)]).reshape(2,7)
+            # actions = np.array([env.single_action_space.sample() for _ in range(env.num_env)])
         else:
-            actions, _, _ = actor.get_action(torch.Tensor(obs).to(device))
-
-        # if len(actions.shape) < 3 : 
-        #     actions=actions.reshape(2,3)
-        # else:
-        #     actions = actions.reshape((actions.shape[0],2,3))
+            action, _, _ = actor.get_action(torch.Tensor(obs).to(device))
             
-        actions = torch.Tensor(actions).to(device).detach()
+        action = torch.Tensor(action).to(device).detach()
 
         # TRY NOT TO MODIFY: execute the game and log data.
-        next_obs, rewards, dones, infos = envs.step(actions)
-        dones = infos["success"]
-
+        next_obs, reward, done, info = env.step(action)
+        reward = reward_mushroomrl(env,next_obs, action)
+        writer.add_scalar("rewards",reward, global_step)
+        done = info["success"]
+        # not_dones = 1 - dones 
+    
         # # TRY NOT TO MODIFY: record rewards for plotting purposes
         # for info in infos:
         #     if "episode" in info.keys():
@@ -266,29 +270,27 @@ if __name__ == "__main__":
         # if dones:
         #     real_next_obs = terminal_state
         # rb.add(obs, real_next_obs, actions, rewards, dones, infos)
-        if len(actions.shape) < 3:
-            actions = actions.flatten()
-        else:
-            actions = actions.reshape(actions.shape[0],-1)
-
-        rb.add(state,actions,next_obs,rewards,done)
+        rb.add(state,action.flatten(),next_obs,reward,done)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
         
-        if not dones:
-            obs = next_obs
+        if not done:
+            obs = copy.deepcopy(next_obs)
         else: 
-            obs = envs.reset()
+            obs = env.reset()
     
         # ALGO LOGIC: training.
         if global_step > args.learning_starts:
             data = rb.sample(args.batch_size)
+
             with torch.no_grad():
                 next_state_actions, next_state_log_pi, _ = actor.get_action(data[2])
-                qf1_next_target = qf1_target(data[2], next_state_actions)
-                qf2_next_target = qf2_target(data[2], next_state_actions)
+                # next_state_actions, next_state_log_pi, _ = torch.Tensor(np.array([actor.get_action(data[2][i,:]) for i in range(data[2].shape[0])]))
+                qf1_next_target = qf1_target(data[2], torch.Tensor(next_state_actions))
+                qf2_next_target = qf2_target(data[2], torch.Tensor(next_state_actions))
                 min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - alpha * next_state_log_pi
-                next_q_value = data[3].flatten() + (1 - data[4].flatten()) * args.gamma * (min_qf_next_target).view(-1)
+                # print(data[4].shape)
+                next_q_value = data[3][:,0:1].view(-1)+ data[4].view(-1) * args.gamma * (min_qf_next_target).view(-1)
 
             qf1_a_values = qf1(data[0], data[1]).view(-1)
             qf2_a_values = qf2(data[0], data[1]).view(-1)
@@ -305,9 +307,9 @@ if __name__ == "__main__":
                     args.policy_frequency
                 ):  # compensate for the delay by doing 'actor_update_interval' instead of 1
                     pi, log_pi, _ = actor.get_action(data[0])
-                    qf1_pi = qf1(data[0], pi)
-                    qf2_pi = qf2(data[0], pi)
-                    min_qf_pi = torch.min(qf1_pi, qf2_pi).view(-1)
+                    qf1_pi = qf1(torch.Tensor(data[0]), torch.Tensor(pi))
+                    qf2_pi = qf2(torch.Tensor(data[0]),torch.Tensor(pi))
+                    min_qf_pi = torch.min(qf1_pi, qf2_pi) #.view(-1)
                     actor_loss = ((alpha * log_pi) - min_qf_pi).mean()
 
                     actor_optimizer.zero_grad()
@@ -315,6 +317,7 @@ if __name__ == "__main__":
                     actor_optimizer.step()
 
                     if args.autotune:
+            
                         with torch.no_grad():
                             _, log_pi, _ = actor.get_action(data[0])
                         alpha_loss = (-log_alpha * (log_pi + target_entropy)).mean()
@@ -329,10 +332,17 @@ if __name__ == "__main__":
                 for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
                 for param, target_param in zip(qf2.parameters(), qf2_target.parameters()):
+                    
+                    
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
-
+            if global_step % 200 == 0:
+                agent.save(f"./models/sac_agent/sac")
+                print("model saved, evaluating:.....")
+                evaluate(build_agent, "./logs", ["7dof-hit"], n_episodes=5, n_cores=-1, seed=args.seed, generate_score=None,
+                        quiet=True, render=True, interpolation_order=3)
+                
             if global_step % 100 == 0:
-                print(global_step)
+                print("global step:.......", global_step)
                 writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf2_values", qf2_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
@@ -345,6 +355,7 @@ if __name__ == "__main__":
                 if args.autotune:
                     writer.add_scalar("losses/alpha_loss", alpha_loss.item(), global_step)
 
-    agent.save(f"./models/sac_agent")
-    envs.stop()
+    agent.save(f"./models/sac_agent/sac")
+    print("model saved at")
+    env.stop()
     writer.close()
