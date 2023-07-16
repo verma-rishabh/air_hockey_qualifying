@@ -17,7 +17,7 @@ import torch.optim as optim
 from utils import ReplayBuffer
 import os
 import sys
-sys.path.remove('/Users/zahrapadar/Desktop/DL-LAB/project/air_hockey_challenge_local_warmup')
+# sys.path.remove('/Users/zahrapadar/Desktop/DL-LAB/project/air_hockey_challenge_local_warmup')
 from torch.utils.tensorboard import SummaryWriter
 from air_hockey_challenge.framework.agent_base import AgentBase
 from air_hockey_challenge.framework import AirHockeyChallengeWrapper
@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument("--env-id", type=str, default="7dof-hit",
         help="the id of the environment")
     # Algorithm specific arguments
-    parser.add_argument("--total-timesteps", type=int, default=1000,
+    parser.add_argument("--total-timesteps", type=int, default=int(1e6),
         help="total timesteps of the experiments")
     parser.add_argument("--buffer-size", type=int, default=int(1e6),
         help="the replay memory buffer size")
@@ -247,7 +247,7 @@ if __name__ == "__main__":
         else:
             action, _, _ = actor.get_action(torch.Tensor(obs).to(device))
             
-        action = torch.Tensor(action).to(device).detach()
+        action = torch.Tensor(action).to(device).detach().cpu().numpy()
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, reward, done, info = env.step(action)
@@ -286,14 +286,14 @@ if __name__ == "__main__":
             with torch.no_grad():
                 next_state_actions, next_state_log_pi, _ = actor.get_action(data[2])
                 # next_state_actions, next_state_log_pi, _ = torch.Tensor(np.array([actor.get_action(data[2][i,:]) for i in range(data[2].shape[0])]))
-                qf1_next_target = qf1_target(data[2], torch.Tensor(next_state_actions))
-                qf2_next_target = qf2_target(data[2], torch.Tensor(next_state_actions))
+                qf1_next_target = qf1_target(data[2].to(device), torch.Tensor(next_state_actions).to(device))
+                qf2_next_target = qf2_target(data[2].to(device), torch.Tensor(next_state_actions).to(device))
                 min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - alpha * next_state_log_pi
                 # print(data[4].shape)
-                next_q_value = data[3][:,0:1].view(-1)+ data[4].view(-1) * args.gamma * (min_qf_next_target).view(-1)
+                next_q_value = data[3]+ data[4] * args.gamma * (min_qf_next_target)
 
-            qf1_a_values = qf1(data[0], data[1]).view(-1)
-            qf2_a_values = qf2(data[0], data[1]).view(-1)
+            qf1_a_values = qf1(data[0], data[1])
+            qf2_a_values = qf2(data[0], data[1])
             qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
             qf2_loss = F.mse_loss(qf2_a_values, next_q_value)
             qf_loss = qf1_loss + qf2_loss
@@ -307,8 +307,8 @@ if __name__ == "__main__":
                     args.policy_frequency
                 ):  # compensate for the delay by doing 'actor_update_interval' instead of 1
                     pi, log_pi, _ = actor.get_action(data[0])
-                    qf1_pi = qf1(torch.Tensor(data[0]), torch.Tensor(pi))
-                    qf2_pi = qf2(torch.Tensor(data[0]),torch.Tensor(pi))
+                    qf1_pi = qf1(torch.Tensor(data[0]).to(device), torch.Tensor(pi).to(device))
+                    qf2_pi = qf2(torch.Tensor(data[0]).to(device),torch.Tensor(pi).to(device))
                     min_qf_pi = torch.min(qf1_pi, qf2_pi) #.view(-1)
                     actor_loss = ((alpha * log_pi) - min_qf_pi).mean()
 
@@ -338,8 +338,8 @@ if __name__ == "__main__":
             if global_step % 200 == 0:
                 agent.save(f"./models/sac_agent/sac")
                 print("model saved, evaluating:.....")
-                evaluate(build_agent, "./logs", ["7dof-hit"], n_episodes=5, n_cores=-1, seed=args.seed, generate_score=None,
-                        quiet=True, render=True, interpolation_order=3)
+                # evaluate(build_agent, "./logs", ["7dof-hit"], n_episodes=5, n_cores=4, seed=args.seed, generate_score=None,
+                #         quiet=True, render=True, interpolation_order=3)
                 
             if global_step % 100 == 0:
                 print("global step:.......", global_step)

@@ -5,9 +5,9 @@ import numpy as np
 from air_hockey_challenge.framework import AgentBase
 from mushroom_rl.core import Agent
 from mushroom_rl.utils.preprocessors import Serializable
-from examples.rl.air_hockey_contraints import EndEffectorConstraint, EndEffectorPosConstraint, JointPosConstraint
-from examples.rl.atacom import ATACOMController, ConstraintList
-from examples.rl.atacom.system import AccelerationControlSystem, VelocityControlSystem
+from air_hockey_contraints import EndEffectorConstraint, EndEffectorPosConstraint, JointPosConstraint
+from atacom import ATACOMController, ConstraintList
+from atacom.system import AccelerationControlSystem, VelocityControlSystem
 
 
 class ATACOMAgent(AgentBase):

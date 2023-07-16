@@ -9,10 +9,10 @@ from experiment_launcher import run_experiment, single_experiment
 
 from air_hockey_challenge.framework.air_hockey_challenge_wrapper import AirHockeyChallengeWrapper
 from air_hockey_challenge.framework.challenge_core import ChallengeCore
-from examples.rl.atacom_agent_wrapper import ATACOMAgent, build_ATACOM_Controller
-from examples.rl.network import SACActorNetwork, SACCriticNetwork
-from examples.rl.rewards import HitReward, DefendReward, PrepareReward
-from examples.rl.rl_agent_wrapper import RlAgent
+from atacom_agent_wrapper import ATACOMAgent, build_ATACOM_Controller
+from network import SACActorNetwork, SACCriticNetwork
+from rewards import HitReward, DefendReward, PrepareReward
+from rl_agent_wrapper import RlAgent
 from mushroom_rl.algorithms.actor_critic import SAC
 from mushroom_rl.core import Logger, Agent
 from mushroom_rl.utils.dataset import compute_J, compute_episodes_length, parse_dataset
@@ -60,8 +60,8 @@ def experiment(env: str = '7dof-hit',
 
     logger = Logger(log_name=env, results_dir=results_dir, seed=seed)
 
-    wandb_run = wandb.init(project="air_hockey_challenge", config=configs, dir=results_dir, name=f"seed_{seed}",
-               group=f'{env}_{alg}_acc-{double_integration}', tags=[str(env), str(slack_beta)])
+    # wandb_run = wandb.init(project="air_hockey_challenge", config=configs, dir=results_dir, name=f"seed_{seed}",
+    #            group=f'{env}_{alg}_acc-{double_integration}', tags=[str(env), str(slack_beta)])
 
     eval_params = {
         "n_episodes": n_eval_episodes,
@@ -122,7 +122,7 @@ def experiment(env: str = '7dof-hit',
     wandb.log(dict(J=J, R=R, best_success=best_success, c_avg=np.mean(np.concatenate(list(c_avg.values()))),
                    c_max=np.max(np.concatenate(list(c_max.values()))), E=E, V=V))
     print("Best Success", best_success)
-    wandb_run.finish()
+    # wandb_run.finish()
 
 
 def mdp_builder(env, kwargs):

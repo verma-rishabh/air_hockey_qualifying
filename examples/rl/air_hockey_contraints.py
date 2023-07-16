@@ -1,6 +1,6 @@
 import numpy as np
 
-from examples.rl.atacom.constraints import Constraint
+from atacom.constraints import Constraint
 
 
 class JointPosVelConstraint(Constraint):

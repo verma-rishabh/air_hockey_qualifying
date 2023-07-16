@@ -60,7 +60,7 @@ class Actor(nn.Module):
 
     def forward(self, x):
 
-        x = x.to(torch.float32)
+        x = x.to(torch.float32).to(device)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         mean = self.fc_mean(x)
@@ -89,7 +89,7 @@ class Actor(nn.Module):
         # else:
         #     pass
         #     action = action.reshape((action.shape[0],2,7))
-        return action.detach().numpy(), log_prob, mean
+        return action.detach().cpu().numpy(), log_prob, mean
 
 class SAC_Agent(AgentBase, nn.Module):
 
@@ -115,7 +115,7 @@ class SAC_Agent(AgentBase, nn.Module):
     
     def draw_action(self, x):
         if not isinstance(x, torch.Tensor):
-            x = torch.from_numpy(x)
+            x = torch.from_numpy(x).to(device)
         action, _, _ =  self.actor.get_action(x)
         action = action.reshape(2,7)
 

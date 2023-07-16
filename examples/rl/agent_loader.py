@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from examples.rl.atacom_agent_wrapper import ATACOMAgent
+from atacom_agent_wrapper import ATACOMAgent
 import torch
 
 def build_agent(env_info, **kwargs):
