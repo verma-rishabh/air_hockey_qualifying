@@ -1,4 +1,4 @@
-from air_hockey_agent.TQC_agent import TD3_agent 
+from air_hockey_agent.TQC_agent import TQC_agent 
 
 
 def build_agent(env_info, **kwargs):
@@ -13,6 +13,6 @@ def build_agent(env_info, **kwargs):
          (AgentBase) An instance of the Agent
     """
 
-    agent = TD3_agent(env_info,agent_id=1)
-    # agent.load("models/default/DDPG-v3_air-hockey_0")
+    agent = TQC_agent(env_info,agent_id=1)
+    agent.load("/run/media/luke/Data/uni/SS2023/DL Lab/Project/qualifying/V3/tqc/models/tqc-hit-mushroomrl_7dof-hit_0")
     return agent

@@ -71,7 +71,7 @@ def get_args():
     arg_test.add_argument("--log_dir", type=str,
                           help="The directory in which the logs are written")
 
-    arg_test.add_argument("--example", type=str, choices=["hit-agent", "defend-agent", "baseline", "sac"], default="")
+    arg_test.add_argument("--example", type=str, choices=["hit-agent", "defend-agent", "baseline", "sac","player"], default="")
 
     default_path = Path(__file__).parent.joinpath("air_hockey_agent/agent_config.yml")
     arg_test.add_argument("-c", "--config", type=str, default=default_path,
@@ -104,18 +104,20 @@ if __name__ == "__main__":
     del filtered_args["config"]
 
     # Load Agent
-    if filtered_args["example"] == "":
-        from air_hockey_agent.agent_builder import build_agent
-    elif filtered_args["example"] == "hit-agent":
-        from examples.control.hitting_agent import build_agent
-    elif filtered_args["example"] == "defend-agent":
-        from examples.control.defending_agent import build_agent
-    elif filtered_args["example"] == "baseline":
-        from baseline.baseline_agent.baseline_agent import build_agent
-    elif filtered_args["example"] == "sac":
-        from examples.rl.agent_loader import build_agent
-    del filtered_args["example"]
-
+    # if filtered_args["example"] == "":
+    #     from air_hockey_agent.agent_builder import build_agent
+    # elif filtered_args["example"] == "hit-agent":
+    #     from examples.control.hitting_agent import build_agent
+    # elif filtered_args["example"] == "defend-agent":
+    #     from examples.control.defending_agent import build_agent
+    # elif filtered_args["example"] == "baseline":
+    #     from baseline.baseline_agent.baseline_agent import build_agent
+    # elif filtered_args["example"] == "sac":
+    #     from examples.rl.agent_loader import build_agent
+    # elif filtered_args["example"] == "player":
+    #     from air_hockey_agent.agent_builder_tqc import build_agent
+    # del filtered_args["example"]
+    from air_hockey_agent.agent_builder_tqc import build_agent
     # Update config with command line args
     config.update(filtered_args)
     config["env_list"] = convert_envs(config["env"])
