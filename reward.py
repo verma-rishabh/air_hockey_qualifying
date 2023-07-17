@@ -32,10 +32,11 @@ class HitReward:
 
         if absorbing or mdp._data.time < mdp.env_info['dt'] * 2:
             # If the hit scores
-            print("scored")
+            
             if (puck_pos[0] - mdp.env_info['table']['length'] / 2) > 0 > \
                     (np.abs(puck_pos[1]) - mdp.env_info['table']['goal_width'] / 2):
                 r = 50
+                print("scored")
             self.has_hit = False
         else:
             # If the puck has not yet been hit, encourage the robot to get closer to the puck

@@ -196,7 +196,7 @@ class train(AirHockeyChallengeWrapper):
                 action = self.policy.select_action(state)
             # Perform action
             next_state, reward, done, _ = self._step(state,action) 
-            self.render()
+            # self.render()
             done_bool = float(done) if episode_timesteps < self.conf.agent.max_episode_steps else 0   ###MAX EPISODE STEPS
             # Store data in replay buffer
             self.replay_buffer.add(state, action.reshape(-1,), next_state, reward, done_bool)
