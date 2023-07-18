@@ -35,7 +35,7 @@ class HitReward:
             
             if (puck_pos[0] - mdp.env_info['table']['length'] / 2) > 0 > \
                     (np.abs(puck_pos[1]) - mdp.env_info['table']['goal_width'] / 2):
-                r = 50
+                r = 100
                 print("scored")
             self.has_hit = False
         else:

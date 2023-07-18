@@ -49,7 +49,7 @@ class Critic(nn.Module):
         self.n_quantiles = n_quantiles
         self.n_nets = n_nets
         for i in range(n_nets):
-            net = Mlp(state_dim + action_dim, [64, 64], n_quantiles)
+            net = Mlp(state_dim + action_dim, [128, 128], n_quantiles)
             self.add_module(f'qf{i}', net)
             self.nets.append(net)
 
@@ -63,7 +63,7 @@ class Actor(nn.Module):
     def __init__(self, state_dim, action_dim,env_info,agent_id=1):
         super().__init__()
         self.action_dim = action_dim
-        self.net = Mlp(state_dim, [64,64], 2 * action_dim)
+        self.net = Mlp(state_dim, [128,128], 2 * action_dim)
 
     def forward(self, obs):
         mean, log_std = self.net(obs).split([self.action_dim, self.action_dim], dim=1)
@@ -135,7 +135,7 @@ class TQC_agent(AgentBase):
 
         self.total_it = 0
 
-    def action_rescale(self, action):
+    def action_scaleup(self, action):
         low = self.min_action
         high = self.max_action
         a = np.zeros_like(low) -1.0
@@ -144,9 +144,18 @@ class TQC_agent(AgentBase):
         action = np.clip(action, low, high)
         return action
 
+    # def action_scaledown(self, action):
+    #     low = self.min_action
+    #     high = self.max_action
+    #     a = np.zeros_like(low) -1.0
+    #     b = np.zeros_like(low) +1.0
+    #     action = a + (b - a)*((action - low)/(high - low))
+    #     action = np.clip(action, a, b)
+    #     return torch.from_numpy(action).to(device)
+
     def draw_action(self, state):
-        norm_state = torch.FloatTensor(state.reshape(1, -1)).to(device)/self.state_max
-        action = self.action_rescale(self.actor(norm_state)[0][0].cpu().detach().numpy())
+        norm_state = torch.FloatTensor(state.reshape(1, -1)).to(device)
+        action = self.action_scaleup(self.actor(norm_state)[0][0].cpu().detach().numpy())
         des_pos = np.array([action[0],action[1],0.1645])                                #'ee_desired_height': 0.1645
         x_ = [action[0],action[1]] 
         y = self.get_ee_pose(state)[0][:2]
@@ -158,14 +167,14 @@ class TQC_agent(AgentBase):
 
     def select_action(self, state):
         state = torch.FloatTensor(state.reshape(1, -1)).to(device)
-        return self.action_rescale(self.actor(state)[0][0].cpu().detach().numpy())
+        # return self.action_scaleup(self.actor(state)[0][0].cpu().detach().numpy())
+        return self.actor(state)[0][0].cpu().detach().numpy()
 
 
     def train(self, replay_buffer, batch_size=256):
 
         state, action, next_state, reward, not_done = replay_buffer.sample(batch_size)
-        state = state/self.state_max
-        next_state = next_state/self.state_max
+        # action = self.action_scaledown(action.cpu().detach().numpy())
 
         alpha = torch.exp(self.log_alpha)
 

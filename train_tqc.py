@@ -48,6 +48,8 @@ class train(AirHockeyChallengeWrapper):
         self.replay_buffer = ReplayBuffer(self.observation_shape, self.action_shape)
     
     def _step(self,state,action):
+        action = self.policy.action_scaleup(action)
+        # print(action)
         des_pos = np.array([action[0],action[1],0.1645])                                #'ee_desired_height': 0.1645
 
         x_ = [action[0],action[1]] 
@@ -199,6 +201,7 @@ class train(AirHockeyChallengeWrapper):
             # self.render()
             done_bool = float(done) if episode_timesteps < self.conf.agent.max_episode_steps else 0   ###MAX EPISODE STEPS
             # Store data in replay buffer
+            # print(action)
             self.replay_buffer.add(state, action.reshape(-1,), next_state, reward, done_bool)
             state = next_state
             episode_reward += reward

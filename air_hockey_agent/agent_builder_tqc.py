@@ -14,5 +14,5 @@ def build_agent(env_info, **kwargs):
     """
 
     agent = TQC_agent(env_info,agent_id=1)
-    agent.load("/run/media/luke/Data/uni/SS2023/DL Lab/Project/qualifying/V3/tqc/models/tqc-hit-mushroomrl_7dof-hit_0")
+    # agent.load("/run/media/luke/Data/uni/SS2023/DL Lab/Project/qualifying/V3/tqc/models/tqc-hit-mushroomrl_7dof-hit_0")
     return agent
