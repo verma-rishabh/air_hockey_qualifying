@@ -143,11 +143,11 @@ class train(AirHockeyChallengeWrapper):
         tolerance = 0.02
 
         if abs(self.policy.get_ee_pose(next_state)[0][1])>0.519:         # should replace with env variables some day
-            r -=0.5 
+            r -=0.1 
         if (self.policy.get_ee_pose(next_state)[0][0])<0.536:
-            r -=0.5 
+            r -=0.1 
         if (self.policy.get_ee_pose(next_state)[0][2])<des_z-tolerance or (self.policy.get_ee_pose(next_state)[0][2])>des_z+tolerance:
-            r -=0.5
+            r -=0.1
         return r
 
 
