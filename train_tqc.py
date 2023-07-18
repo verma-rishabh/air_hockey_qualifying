@@ -60,7 +60,7 @@ class train(AirHockeyChallengeWrapper):
         _,x = solve_hit_config_ik_null(self.policy.robot_model,self.policy.robot_data, des_pos, des_v, self.policy.get_joint_pos(state))
         action = copy.deepcopy(x)
         next_state, reward, done, info = self.step(x)
-        # reward = self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
+        reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
 
         return next_state, reward, done, info
 
@@ -72,9 +72,9 @@ class train(AirHockeyChallengeWrapper):
         if not os.path.exists(self.conf.agent.dump_dir+"/models"):
             os.makedirs(self.conf.agent.dump_dir+"/models")
     
-    # def reward_mushroomrl(self, next_state, action):
+    def reward_mushroomrl(self, next_state, action):
 
-    #     r = 0
+        r = 0
     #     mod_next_state = next_state                            # changing frame of puck pos (wrt origin)
     #     mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
     #     absorbing = self.base_env.is_absorbing(mod_next_state)
@@ -139,16 +139,16 @@ class train(AirHockeyChallengeWrapper):
 
     #     r -= 1e-3 * np.linalg.norm(action)
         
-    #     des_z = self.env_info['robot']['ee_desired_height']
-    #     tolerance = 0.02
+        des_z = self.env_info['robot']['ee_desired_height']
+        tolerance = 0.02
 
-    #     if abs(self.policy.get_ee_pose(next_state)[0][1])>0.519:         # should replace with env variables some day
-    #         r -=0.5 
-    #     if (self.policy.get_ee_pose(next_state)[0][0])<0.536:
-    #         r -=0.5 
-    #     if (self.policy.get_ee_pose(next_state)[0][2])<des_z-tolerance*10 or (self.policy.get_ee_pose(next_state)[0][2])>des_z+tolerance*10:
-    #         r -=0.5
-    #     return r
+        if abs(self.policy.get_ee_pose(next_state)[0][1])>0.519:         # should replace with env variables some day
+            r -=0.5 
+        if (self.policy.get_ee_pose(next_state)[0][0])<0.536:
+            r -=0.5 
+        if (self.policy.get_ee_pose(next_state)[0][2])<des_z-tolerance or (self.policy.get_ee_pose(next_state)[0][2])>des_z+tolerance:
+            r -=0.5
+        return r
 
 
 
