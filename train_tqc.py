@@ -13,7 +13,7 @@ import copy
 from reward import HitReward, DefendReward, PrepareReward
 
 class train(AirHockeyChallengeWrapper):
-    def __init__(self, env=None, custom_reward_function=HitReward(), interpolation_order=1, **kwargs):
+    def __init__(self, env=None, custom_reward_function=DefendReward(), interpolation_order=1, **kwargs):
         # Load config file
         self.conf = OmegaConf.load('train_tqc.yaml')
         env = self.conf.env
