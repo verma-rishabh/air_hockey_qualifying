@@ -34,7 +34,7 @@ class train(AirHockeyChallengeWrapper):
         # vel_max = self.env_info['robot']['joint_vel_limit'][1] 
         # max_ = np.stack([pos_max,vel_max])
         # self.max_action  = max_.reshape(14,)
-        self.min_action = np.array([0.81,-0.40,0])
+        self.min_action = np.array([0.65,-0.40,0])
         self.max_action = np.array([1.32,0.40,1.5])
         # make dirs 
         self.make_dir()
