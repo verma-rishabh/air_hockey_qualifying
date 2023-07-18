@@ -14,5 +14,6 @@ agent:
     max_episode_steps: 200
     save_model: True     
     load_model: ""                             
-    dump_dir : /run/media/luke/Data/uni/SS2023/DL Lab/Project/qualifying/V3/tqc/hit
+    # dump_dir : /run/media/luke/Data/uni/SS2023/DL Lab/Project/qualifying/V3/tqc/hit
+    dump_dir : ./hit
     file_name : ${agent.policy}_${env}_${agent.seed}

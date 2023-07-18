@@ -166,7 +166,7 @@ class train(AirHockeyChallengeWrapper):
 
                 action = self.policy.select_action(state)
                 next_state, reward, done, info = self._step(state,action)
-                self.render()
+                # self.render()
                 avg_reward += reward
                 episode_timesteps+=1
                 state = next_state
