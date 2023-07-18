@@ -167,5 +167,3 @@ cython_debug/
 __pycache__/
 *.py[cod]
 examples/rl/agents/*
-defend/*
-*/tensorboard/*
