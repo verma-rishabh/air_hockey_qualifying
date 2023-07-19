@@ -136,7 +136,7 @@ class train(AirHockeyChallengeWrapper):
 
                 r = np.exp(-8 * (dist_ee_puck - 0.08)) * cos_ang ** 2
             else:
-                r_hit = 0.25 + min([0, ( puck_vel[0])])
+                r_hit = 0.25 + min([0, ( puck_vel[0]*10)])
 
                 r_goal = 0
                 if puck_pos[0] > 0.7:
