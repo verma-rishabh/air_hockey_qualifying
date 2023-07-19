@@ -23,7 +23,7 @@ class AirHockeyHit(AirHockeyDouble):
         hit_width = self.env_info['table']['width'] / 2 - self.env_info['puck']['radius'] - \
                     self.env_info['mallet']['radius'] * 2
         self.hit_range = np.array([[-0.7, -0.2], [-hit_width, hit_width]])  # Table Frame
-        self.init_velocity_range = (0, 0.5)  # Table Frame
+        self.init_velocity_range = (1, 3)  # Table Frame
         self.init_ee_range = np.array([[0.60, 1.25], [-0.4, 0.4]])  # Robot Frame
 
         if opponent_agent is not None:
