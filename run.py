@@ -117,7 +117,7 @@ if __name__ == "__main__":
     # elif filtered_args["example"] == "player":
     #     from air_hockey_agent.agent_builder_tqc import build_agent
     # del filtered_args["example"]
-    from air_hockey_agent.agent_builder_tqc_hit import build_agent
+    from air_hockey_agent.agent_builder_tqc_tournament import build_agent
     # Update config with command line args
     config.update(filtered_args)
     config["env_list"] = convert_envs(config["env"])
