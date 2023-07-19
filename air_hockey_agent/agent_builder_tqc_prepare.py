@@ -14,5 +14,5 @@ def build_agent(env_info, **kwargs):
     """
 
     agent = TQC_agent(env_info,agent_id=1)
-    agent.load("prepare/models/tqc-prepare-mushroomrl_7dof-prepare_0")
+    agent.load("prepare/models/v2/tqc-prepare-mushroomrl_7dof-prepare_0")
     return agent
