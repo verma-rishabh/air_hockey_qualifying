@@ -20,9 +20,9 @@ class SoftQNetwork(nn.Module):
         super().__init__()
         state_dim = env_info["rl_info"].observation_space.low.shape[0]
         action_dim = env_info["rl_info"].action_space.low.shape[0]
-        self.fc1 = nn.Linear(state_dim + action_dim, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, 1)
+        self.fc1 = nn.Linear(state_dim + action_dim, 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, 1)
 
     def forward(self, x, a):
         
@@ -40,10 +40,10 @@ class Actor(nn.Module):
         super().__init__()
         state_dim = env_info["rl_info"].observation_space.low.shape[0]
         action_dim = env_info["rl_info"].action_space.low.shape[0]
-        self.fc1 = nn.Linear(state_dim, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc_mean = nn.Linear(64, action_dim)
-        self.fc_logstd = nn.Linear(64, action_dim)
+        self.fc1 = nn.Linear(state_dim, 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc_mean = nn.Linear(256, action_dim)
+        self.fc_logstd = nn.Linear(256, action_dim)
         _action_space = np.concatenate((env_info["robot"]["joint_pos_limit"], 
                                   env_info["robot"]["joint_vel_limit"]), axis=1)
 
@@ -66,8 +66,8 @@ class Actor(nn.Module):
         mean = self.fc_mean(x)
         log_std = self.fc_logstd(x)
         log_std = torch.tanh(log_std)
-        # log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (log_std + 1) 
-        log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
+        log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (log_std + 1) 
+
         return mean, log_std
     
     def get_action(self, x):
@@ -80,8 +80,7 @@ class Actor(nn.Module):
         log_prob = normal.log_prob(x_t)
         # Enforcing Action Bound
         log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6)
-        # print(log_prob.shape)
-        log_prob = log_prob.sum(1, keepdim=True)
+        log_prob = log_prob.sum()
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
         # print(action.shape)
 
@@ -110,7 +109,6 @@ class SAC_Agent(AgentBase, nn.Module):
         self.qf2_target = SoftQNetwork( env_info) 
         self.qf1_target.load_state_dict(self.qf1.state_dict())
         self.qf2_target.load_state_dict(self.qf2.state_dict())
-
 
     def get_value(self, x):
         pass
