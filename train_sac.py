@@ -46,11 +46,11 @@ def parse_args():
         help="the replay memory buffer size")
     parser.add_argument("--gamma", type=float, default=0.99,
         help="the discount factor gamma")
-    parser.add_argument("--tau", type=float, default=0.01,
+    parser.add_argument("--tau", type=float, default=0.005,
         help="target smoothing coefficient (default: 0.005)")
-    parser.add_argument("--batch-size", type=int, default=256,
+    parser.add_argument("--batch-size", type=int, default=1024,
         help="the batch size of sample from the reply memory")
-    parser.add_argument("--learning-starts", type=int, default=100,
+    parser.add_argument("--learning-starts", type=int, default=500,
         help="timestep to start learning")
     parser.add_argument("--policy-lr", type=float, default=3e-4,
         help="the learning rate of the policy network optimizer")
@@ -78,18 +78,13 @@ def make_env(env_id, seed, custom_reward_function=None):
 
     return env
 
-def reward_mushroomrl(env,next_state, action):
-    
+def reward_mushroomrl(env,actor, next_state, action):
+
     r = 0
     mod_next_state = next_state                            # changing frame of puck pos (wrt origin)
     mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
     absorbing = env.base_env.is_absorbing(copy.deepcopy(mod_next_state))
-    puck_pos, puck_vel = env.base_env.get_puck(copy.deepcopy(mod_next_state))
-    q = next_state[env.env_info['joint_pos_ids']]
-    dq = next_state[env.env_info['joint_vel_ids']]
-
-    c_ee = env.env_info['constraints'].get('ee_constr').fun(q, dq)
-    constraint_reward = -np.sum(c_ee) if np.any(c_ee>0) else 0                     # extracts from obs therefore robot frame
+    puck_pos, puck_vel = env.base_env.get_puck(copy.deepcopy(mod_next_state))                     # extracts from obs therefore robot frame
 
 
     ###################################################
@@ -109,13 +104,19 @@ def reward_mushroomrl(env,next_state, action):
     vec_puck_goal = (goal - puck_pos[:2]) / np.linalg.norm(goal - puck_pos[:2])
     has_hit = env.base_env._check_collision("puck", "robot_1/ee")
 
+    
+    ###################################################
+    
+    
+
     # If puck is out of bounds
     if absorbing:
         # If puck is in the opponent goal
         if (puck_pos[0] - env.env_info['table']['length'] / 2) > 0 and \
                 (np.abs(puck_pos[1]) - env.env_info['table']['goal_width']) < 0:
-                # print("puck_pos",puck_pos,"absorbing",absorbing)
+                print("puck_pos",puck_pos,"absorbing",absorbing)
                 r = 200
+
     else:
         if not has_hit:
             ee_pos = env.base_env.get_ee()[0]                                     # tO check
@@ -141,19 +142,20 @@ def reward_mushroomrl(env,next_state, action):
                 r_goal = 1. / (np.sqrt(2. * np.pi) * sig) * np.exp(-np.power((puck_pos[1] - 0) / sig, 2.) / 2)
 
             r = 2 * r_hit + 10 * r_goal
-
+        # dist_ee_board = np.linalg.norm(env.base_env.get_ee()[0][2] -0.0)
+        # r -= 1-np.exp(-5*dist_ee_board)
+        # print("dist_reward",-1+np.exp(-5*dist_ee_board))
     r -= 1e-3 * np.linalg.norm(action)
     
-    des_z = env.base_env.env_info['robot']['ee_desired_height']
-    tolerance = 0.02
+    # des_z = env.base_env.env_info['robot']['ee_desired_height']
+    # tolerance = 0.02
 
-    # if abs(actor.get_ee_pose(copy.deepcopy(next_state))[0][1])>0.519:  # should replace with env variables some day
+    # if abs(actor.get_ee_pose(copy.deepcopy(next_state))[0][1])>0.519:         # should replace with env variables some day
     #     r -=0.1 
     # if (actor.get_ee_pose(copy.deepcopy(next_state))[0][0])<0.536:
     #     r -=0.1 
     # if (actor.get_ee_pose(copy.deepcopy(next_state))[0][2])<des_z-tolerance*10 or (actor.get_ee_pose(copy.deepcopy(next_state))[0][2])>des_z+tolerance*10:
     #     r -=0.1
-    # r += constraint_reward
     return r
 
 
@@ -206,8 +208,8 @@ if __name__ == "__main__":
     qf1_target = agent.qf1_target.to(device)
     qf2_target = agent.qf2_target.to(device)
 
-    # qf1_target.load_state_dict(qf1.state_dict())
-    # qf2_target.load_state_dict(qf2.state_dict())
+    qf1_target.load_state_dict(qf1.state_dict())
+    qf2_target.load_state_dict(qf2.state_dict())
 
     q_optimizer = optim.Adam(list(qf1.parameters()) + list(qf2.parameters()), lr=args.q_lr)
     actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.policy_lr)
@@ -245,13 +247,15 @@ if __name__ == "__main__":
             action = torch.Tensor([random.uniform(min_action[i] * 0.95 , max_action[i]* 0.95) for i in range(action_dim)]).reshape(2,7)
             # actions = np.array([env.single_action_space.sample() for _ in range(env.num_env)])
         else:
-            action, _, _ = actor.get_action(torch.Tensor(obs).to(device))
+            action, _, _ = actor.get_action(torch.Tensor(obs).unsqueeze(dim=0).to(device))
             
-        action = torch.Tensor(action).to(device).detach().cpu().numpy()
+        action = torch.Tensor(action).to(device).detach().cpu().numpy().reshape(2,7)
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, reward, done, info = env.step(action)
-        reward = reward_mushroomrl(env,next_obs, action)
+        # env.render()
+        reward = reward_mushroomrl(env,actor,next_obs, action)
+
         writer.add_scalar("rewards",reward, global_step)
         done = info["success"]
         # not_dones = 1 - dones 
@@ -271,7 +275,7 @@ if __name__ == "__main__":
         #     real_next_obs = terminal_state
         # rb.add(obs, real_next_obs, actions, rewards, dones, infos)
         rb.add(state,action.flatten(),next_obs,reward,done)
-
+        
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
         
         if not done:
@@ -289,14 +293,14 @@ if __name__ == "__main__":
                 qf1_next_target = qf1_target(data[2].to(device), torch.Tensor(next_state_actions).to(device))
                 qf2_next_target = qf2_target(data[2].to(device), torch.Tensor(next_state_actions).to(device))
                 min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - alpha * next_state_log_pi
-                # print(data[4].shape)
                 next_q_value = data[3]+ data[4] * args.gamma * (min_qf_next_target)
-
             qf1_a_values = qf1(data[0], data[1])
             qf2_a_values = qf2(data[0], data[1])
             qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
             qf2_loss = F.mse_loss(qf2_a_values, next_q_value)
             qf_loss = qf1_loss + qf2_loss
+            
+            # print(qf1_a_values[-1])
 
             q_optimizer.zero_grad()
             qf_loss.backward()
@@ -310,7 +314,7 @@ if __name__ == "__main__":
                     qf1_pi = qf1(torch.Tensor(data[0]).to(device), torch.Tensor(pi).to(device))
                     qf2_pi = qf2(torch.Tensor(data[0]).to(device),torch.Tensor(pi).to(device))
                     min_qf_pi = torch.min(qf1_pi, qf2_pi) #.view(-1)
-                    actor_loss = ((alpha * log_pi) - min_qf_pi).mean()
+                    actor_loss = (alpha * log_pi - min_qf_pi).mean(1, keepdim=True).mean()
 
                     actor_optimizer.zero_grad()
                     actor_loss.backward()
@@ -332,9 +336,9 @@ if __name__ == "__main__":
                 for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
                 for param, target_param in zip(qf2.parameters(), qf2_target.parameters()):
-                    
-                    
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
+
+
             if global_step % 200 == 0:
                 agent.save(f"./models/sac_agent/sac")
                 print("model saved, evaluating:.....")
