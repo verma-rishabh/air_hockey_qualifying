@@ -13,7 +13,7 @@ import copy
 from reward import HitReward, DefendReward, PrepareReward
 
 class train(AirHockeyChallengeWrapper):
-    def __init__(self, env=None, custom_reward_function=HitReward(), interpolation_order=1, **kwargs):
+    def __init__(self, env=None, custom_reward_function=HitReward(), interpolation_order=3, **kwargs):
         # Load config file
         self.conf = OmegaConf.load('train_tqc.yaml')
         env = self.conf.env
@@ -24,18 +24,18 @@ class train(AirHockeyChallengeWrapper):
         torch.manual_seed(self.conf.agent.seed)
         np.random.seed(self.conf.agent.seed)
         # env variables
-        # self.action_shape = self.env_info["rl_info"].action_space.shape[0]
-        self.action_shape = 3
+        self.action_shape = self.env_info["rl_info"].action_space.shape[0]
+        # self.action_shape = 3
         self.observation_shape = self.env_info["rl_info"].observation_space.shape[0]
         # policy
         self.policy = build_agent(self.env_info)
         # action_space.high
-        # pos_max = self.env_info['robot']['joint_pos_limit'][1]
-        # vel_max = self.env_info['robot']['joint_vel_limit'][1] 
-        # max_ = np.stack([pos_max,vel_max])
-        # self.max_action  = max_.reshape(14,)
-        self.min_action = np.array([0.65,-0.40,0])
-        self.max_action = np.array([1.32,0.40,1.5])
+        pos_max = self.env_info['robot']['joint_pos_limit'][1]
+        vel_max = self.env_info['robot']['joint_vel_limit'][1] 
+        max_ = np.stack([pos_max,vel_max])
+        self.max_action  = max_.reshape(14,)
+        # self.min_action = np.array([0.65,-0.40,0])
+        # self.max_action = np.array([1.32,0.40,1.5])
         # make dirs 
         self.make_dir()
         self.tensorboard = SummaryWriter(self.conf.agent.dump_dir + "/tensorboard/" + datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -48,18 +48,8 @@ class train(AirHockeyChallengeWrapper):
         self.replay_buffer = ReplayBuffer(self.observation_shape, self.action_shape)
     
     def _step(self,state,action):
-        action = self.policy.action_scaleup(action)
-        # print(action)
-        des_pos = np.array([action[0],action[1],0.1645])                                #'ee_desired_height': 0.1645
-
-        x_ = [action[0],action[1]] 
-        y = self.policy.get_ee_pose(state)[0][:2]
-        des_v = action[2]*(x_-y)/(np.linalg.norm(x_-y)+1e-8)
-        des_v = np.concatenate((des_v,[0])) 
-        # _,x = inverse_kinematics(self.policy.robot_model, self.policy.robot_data,des_pos)
-        _,x = solve_hit_config_ik_null(self.policy.robot_model,self.policy.robot_data, des_pos, des_v, self.policy.get_joint_pos(state))
-        action = copy.deepcopy(x)
-        next_state, reward, done, info = self.step(x)
+        action = self.policy.action_scaleup(action)                                     # [-1,1] -> [-self.max_action,self.max_action]
+        next_state, reward, done, info = self.step(action)
         reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
 
         return next_state, reward, done, info
@@ -166,7 +156,7 @@ class train(AirHockeyChallengeWrapper):
 
                 action = self.policy.select_action(state)
                 next_state, reward, done, info = self._step(state,action)
-                # self.render()
+                self.render()
                 avg_reward += reward
                 episode_timesteps+=1
                 state = next_state
@@ -193,7 +183,7 @@ class train(AirHockeyChallengeWrapper):
            
             # Select action randomly or according to policy
             if t < self.conf.agent.start_timesteps:
-                action = np.random.uniform(self.min_action,self.max_action,(self.action_shape,))
+                action = np.random.uniform(-self.max_action,self.max_action,(self.action_shape,)).reshape(2,7)
             else:
                 action = self.policy.select_action(state)
             # Perform action

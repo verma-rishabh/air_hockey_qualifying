@@ -92,14 +92,18 @@ class TQC_agent(AgentBase):
         conf = OmegaConf.load('train_tqc.yaml')
 
         state_dim = env_info["rl_info"].observation_space.shape[0]
-        #action_dim = env_info["rl_info"].action_space.shape[0]
-        action_dim = 3
-        self.min_action = np.array([0.81,-0.40,0])
-        self.max_action = np.array([1.32,0.40,1.5])
+        action_dim = env_info["rl_info"].action_space.shape[0]
+        # action_dim = 3
+        # self.min_action = np.array([0.81,-0.40,0])
+        # self.max_action = np.array([1.32,0.40,1.5])
         state_max = np.array(env_info['rl_info'].observation_space.high,dtype=np.float32)
         self.state_max = torch.from_numpy(state_max).to(device)
-        max_action = np.array([1.5,0.5,5],dtype=np.float32)
-        max_action = torch.from_numpy(max_action).to(device)
+        # max_action = np.array([1.5,0.5,5],dtype=np.float32)
+        pos_max = self.env_info['robot']['joint_pos_limit'][1]
+        vel_max = self.env_info['robot']['joint_vel_limit'][1] 
+        max_ = np.stack([pos_max,vel_max])
+        self.max_action  = max_.reshape(14,)
+        # max_action = torch.from_numpy(max_action).to(device)
         # pos_max = self.env_info['robot']['joint_pos_limit'][1]
         # vel_max = self.env_info['robot']['joint_vel_limit'][1] 
         # max_ = np.stack([pos_max,vel_max])
@@ -122,7 +126,7 @@ class TQC_agent(AgentBase):
         self.log_alpha = torch.zeros((1,), requires_grad=True, device=device)
 
         # TODO: check hyperparams
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=3e-3)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=3e-3)               # could be smaller 🤷‍♂️
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-3)
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=3e-4)
 
@@ -136,13 +140,13 @@ class TQC_agent(AgentBase):
         self.total_it = 0
 
     def action_scaleup(self, action):
-        low = self.min_action
+        low = -self.max_action
         high = self.max_action
         a = np.zeros_like(low) -1.0
         b = np.zeros_like(low) +1.0
         action = low + (high - low)*((action - a)/(b - a))
         action = np.clip(action, low, high)
-        return action
+        return action.reshape(2,7)
 
     # def action_scaledown(self, action):
     #     low = self.min_action
@@ -153,18 +157,13 @@ class TQC_agent(AgentBase):
     #     action = np.clip(action, a, b)
     #     return torch.from_numpy(action).to(device)
 
+    #used for eval
     def draw_action(self, state):
         norm_state = torch.FloatTensor(state.reshape(1, -1)).to(device)
-        action = self.action_scaleup(self.actor(norm_state)[0][0].cpu().detach().numpy())
-        des_pos = np.array([action[0],action[1],0.1645])                                #'ee_desired_height': 0.1645
-        x_ = [action[0],action[1]] 
-        y = self.get_ee_pose(state)[0][:2]
-        des_v = action[2]*(x_-y)/(np.linalg.norm(x_-y)+1e-8)
-        des_v = np.concatenate((des_v,[0])) 
-        # _,x = inverse_kinematics(self.policy.robot_model, self.policy.robot_data,des_pos)
-        _,x = solve_hit_config_ik_null(self.robot_model,self.robot_data, des_pos, des_v, self.get_joint_pos(state))
-        return x
+        action = self.action_scaleup(self.actor(norm_state)[0][0].cpu().detach().numpy()).reshape(2,7)
+        return action
 
+    # used for training non scaleup version
     def select_action(self, state):
         state = torch.FloatTensor(state.reshape(1, -1)).to(device)
         # return self.action_scaleup(self.actor(state)[0][0].cpu().detach().numpy())
