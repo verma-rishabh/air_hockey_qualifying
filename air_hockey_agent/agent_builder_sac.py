@@ -1,4 +1,4 @@
-from air_hockey_agent.TD3_agent import TD3_agent 
+from air_hockey_agent.SAC_agent import SAC_agent 
 
 
 def build_agent(env_info, **kwargs):
@@ -13,6 +13,6 @@ def build_agent(env_info, **kwargs):
          (AgentBase) An instance of the Agent
     """
 
-    agent = TD3_agent(env_info,agent_id=1)
-    # agent.load("models/default/DDPG-v3_air-hockey_0")
+    agent = SAC_agent(env_info,agent_id=1)
+    # agent.load("../hit/atacom/models/tqc-hit-mushroomrl_7dof-hit_0")
     return agent

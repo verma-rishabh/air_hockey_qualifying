@@ -3,7 +3,7 @@ import torch
 import argparse
 import os
 from air_hockey_challenge.framework.air_hockey_challenge_wrapper import AirHockeyChallengeWrapper
-from air_hockey_agent.agent_builder_tqc import build_agent
+from air_hockey_agent.agent_builder_sac import build_agent
 from utils import ReplayBuffer, solve_hit_config_ik_null
 from torch.utils.tensorboard.writer import SummaryWriter
 from omegaconf import OmegaConf
@@ -48,7 +48,6 @@ class train(AirHockeyChallengeWrapper):
         self.replay_buffer = ReplayBuffer(self.observation_shape, self.action_shape)
     
     def _step(self,state,action):
-        action = self.policy.action_scaleup(action)                                     # [-1,1] -> [-self.max_action,self.max_action]
         next_state, reward, done, info = self.step(action)
         reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
 
@@ -65,7 +64,7 @@ class train(AirHockeyChallengeWrapper):
     def reward_mushroomrl(self, next_state, action):
 
         r = 0
-    #     mod_next_state = next_state                            # changing frame of puck pos (wrt origin)
+    #     mod_next_state      self.policy.actor.eval() = next_state                            # changing frame of puck pos (wrt origin)
     #     mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
     #     absorbing = self.base_env.is_absorbing(mod_next_state)
     #     puck_pos, puck_vel = self.base_env.get_puck(mod_next_state)                     # extracts from obs therefore robot frame
@@ -145,7 +144,7 @@ class train(AirHockeyChallengeWrapper):
 # Runs policy for X episodes and returns average reward
 # A fixed seed is used for the eval environment
     def eval_policy(self,t,eval_episodes=10):
-        self.policy.actor.eval()
+  
         for _ in range(eval_episodes):
             avg_reward = 0.
             # print(_)
@@ -154,14 +153,14 @@ class train(AirHockeyChallengeWrapper):
             while not done and episode_timesteps<100:
                 # print("ep",episode_timesteps)
 
-                action = self.policy.select_action(state)
+                action = self.policy.select_action(state,evaluate=True)
                 next_state, reward, done, info = self._step(state,action)
                 self.render()
                 avg_reward += reward
                 episode_timesteps+=1
                 state = next_state
             self.tensorboard.add_scalar("eval_reward", avg_reward,t+_)
-        self.policy.actor.train()
+
     # def _step(self,action):
     #     next_state, reward, done, info = self.step(action)
     #     reward = self.reward_mushroomrl(next_state, action) 
@@ -174,10 +173,6 @@ class train(AirHockeyChallengeWrapper):
         episode_num = 0
         # self.policy.actor.train()
         for t in range(int(self.conf.agent.max_timesteps)):
-            self.policy.actor.train()
-            critic_loss = np.nan
-            actor_loss = np.nan
-            alpha_loss = np.nan
 
             episode_timesteps += 1
            
@@ -185,7 +180,7 @@ class train(AirHockeyChallengeWrapper):
             if t < self.conf.agent.start_timesteps:
                 action = np.random.uniform(-self.max_action,self.max_action,(self.action_shape,)).reshape(2,7)
             else:
-                action = self.policy.select_action(state)
+                action = self.policy.select_action(state,evaluate=False)
             # Perform action
             next_state, reward, done, _ = self._step(state,action) 
             # self.render()
@@ -198,18 +193,17 @@ class train(AirHockeyChallengeWrapper):
 
             # # Train agent after collecting sufficient data
             if t >= self.conf.agent.start_timesteps:
-                actor_loss,critic_loss,alpha_loss=self.policy.train(self.replay_buffer, self.conf.agent.batch_size)
+                qf1_loss, qf2_loss, policy_loss, alpha_loss =self.policy.update_parameters(self.replay_buffer,\
+                     self.conf.agent.batch_size,t)
+                self.tensorboard.add_scalar("q1_loss", qf1_loss, t)
+                self.tensorboard.add_scalar("q2_loss", qf2_loss, t)
+                self.tensorboard.add_scalar("policy_loss", policy_loss, t)
+                self.tensorboard.add_scalar("alpha_loss", alpha_loss, t)
 
             if done or episode_timesteps > self.conf.agent.max_episode_steps: 
                 # +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
                 print(f"Total T: {t+1} Episode Num: {episode_num+1} Episode T: {episode_timesteps} Reward: {episode_reward.sum():.3f}")
                 # Reset environment
-                if (actor_loss is not np.nan):
-                    self.tensorboard.add_scalar("actor loss", actor_loss, t)
-                if (critic_loss is not np.nan):
-                    self.tensorboard.add_scalar("critic loss", critic_loss, t)
-                if (alpha_loss is not np.nan):
-                    self.tensorboard.add_scalar("alpha loss", alpha_loss, t)
                 self.tensorboard.add_scalar("reward", episode_reward, t)
                 state, done = self.reset(), False
                 episode_reward = 0
@@ -218,7 +212,8 @@ class train(AirHockeyChallengeWrapper):
                 
             if (t + 1) % self.conf.agent.eval_freq == 0:
                 self.eval_policy(t)
-                self.policy.save(self.conf.agent.dump_dir + f"/models/{self.conf.agent.file_name}")
+                self.policy.save_checkpoint(self.conf.env,suffix=self.conf.agent.file_name,\
+                     ckpt_path= self.conf.agent.dump_dir + f"/models/{self.conf.agent.file_name}")
 
 x = train()
 x.train_model()
