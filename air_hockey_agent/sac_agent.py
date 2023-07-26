@@ -10,6 +10,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions.normal import Normal
 import sys
+import os
+sys.path.insert(0, os.getcwd())
 from air_hockey_challenge.framework.agent_base import AgentBase
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -23,12 +25,18 @@ class SoftQNetwork(nn.Module):
         self.fc1 = nn.Linear(state_dim + action_dim, 256)
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 1)
+        self.lnorm1 = nn.LayerNorm([256, 256])
+        self.bnorm1 = nn.BatchNorm1d(256)  
+
+
 
     def forward(self, x, a):
         
         x = torch.cat([x, a], 1)
         x = F.relu(self.fc1(x))
+        x = self.bnorm1(x)
         x = F.relu(self.fc2(x))
+        x = self.lnorm1(x)
         x = self.fc3(x)
         return x
     

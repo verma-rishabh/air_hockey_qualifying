@@ -15,25 +15,28 @@ import torch.nn.functional as F
 import torch.optim as optim
 # from stable_baselines3.common.buffers import ReplayBuffer
 from utils import ReplayBuffer
+from baseline.baseline_agent.baseline_agent import build_agent
+from omegaconf import OmegaConf
+
 import os
 import sys
-# sys.path.remove('/Users/zahrapadar/Desktop/DL-LAB/project/air_hockey_challenge_local_warmup')
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 from air_hockey_challenge.framework.agent_base import AgentBase
 from air_hockey_challenge.framework import AirHockeyChallengeWrapper
-from torch.utils.tensorboard import SummaryWriter
 sys.path.append('./air_hockey_agent')
-from sac_agent import SAC_Agent, SoftQNetwork, Actor
+from air_hockey_agent.sac_agent import SAC_Agent, SoftQNetwork, Actor
 from air_hockey_challenge.framework.evaluate_agent import evaluate
-from air_hockey_agent.agent_builder import build_agent
+
+# from air_hockey_agent.agent_builder import build_agent as sac_agent
+
 def parse_args():
     # fmt: off
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp-name", type=str, default=os.path.basename(__file__).rstrip(".py"),
         help="the name of this experiment")
-    parser.add_argument("--seed", type=int, default=1,
+    parser.add_argument("--seed", type=int, default=42,
         help="seed of the experiment")
-    parser.add_argument("--torch-deterministic", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+    parser.add_argument("--torch-deterministic", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="if toggled, `torch.backends.cudnn.deterministic=False`")
     parser.add_argument("--cuda", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="if toggled, cuda will be enabled by default")
@@ -50,32 +53,30 @@ def parse_args():
         help="target smoothing coefficient (default: 0.005)")
     parser.add_argument("--batch-size", type=int, default=256,
         help="the batch size of sample from the reply memory")
-    parser.add_argument("--learning-starts", type=int, default=100,
+    parser.add_argument("--learning-starts", type=int, default=5000,
         help="timestep to start learning")
-    parser.add_argument("--policy-lr", type=float, default=3e-4,
+    parser.add_argument("--policy-lr", type=float, default=1e-4,
         help="the learning rate of the policy network optimizer")
     parser.add_argument("--q-lr", type=float, default=3e-4, #1e-3,
         help="the learning rate of the Q network network optimizer")
     parser.add_argument("--policy-frequency", type=int, default=1,
         help="the frequency of training policy (delayed)")
-    parser.add_argument("--target-network-frequency", type=int, default=1, # Denis Yarats' implementation delays this by 2.
+    parser.add_argument("--target-network-frequency", type=int, default=2, # Denis Yarats' implementation delays this by 2.
         help="the frequency of updates for the target nerworks")
     parser.add_argument("--noise-clip", type=float, default=0.5,
         help="noise clip parameter of the Target Policy Smoothing Regularization")
-    parser.add_argument("--alpha", type=float, default=0.2,
+    parser.add_argument("--alpha", type=float, default=0.01, #0.2,
             help="Entropy regularization coefficient.")
-    parser.add_argument("--autotune", type=lambda x:bool(strtobool(x)), default=True, nargs="?", const=True,
+    parser.add_argument("--autotune", type=lambda x:bool(strtobool(x)), default=False, nargs="?", const=True,
         help="automatic tuning of the entropy coefficient")
     args = parser.parse_args()
     # fmt: on
     return args
 
 
-def make_env(env_id, seed, custom_reward_function=None):
-    env = AirHockeyChallengeWrapper(env_id, custom_reward_function=custom_reward_function, interpolation_order=3)
-    env.seed = seed
+def make_env(env_id,seed):
+    env = AirHockeyChallengeWrapper(env_id)
     env.env_info["rl_info"].observation_space.seed = seed
-
     return env
 
 def reward_mushroomrl(env,next_state, action):
@@ -85,12 +86,21 @@ def reward_mushroomrl(env,next_state, action):
     mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
     absorbing = env.base_env.is_absorbing(copy.deepcopy(mod_next_state))
     puck_pos, puck_vel = env.base_env.get_puck(copy.deepcopy(mod_next_state))
+
     q = next_state[env.env_info['joint_pos_ids']]
     dq = next_state[env.env_info['joint_vel_ids']]
+    constraints = env.env_info['constraints'].keys()
 
-    c_ee = env.env_info['constraints'].get('ee_constr').fun(q, dq)
-    constraint_reward = -np.sum(c_ee) if np.any(c_ee>0) else 0                     # extracts from obs therefore robot frame
+    constraint_reward = 0
+    for constr in constraints:
+        error = env.env_info['constraints'].get(constr).fun(q, dq)
+        constr_error = np.sum(error[error > 0]) if np.any(error > 0) else 0
+        constraint_reward -= constr_error
+        
+    # constraint_reward *= 300 
 
+    if constraint_reward !=0:
+        print("constraint reward", constraint_reward)
 
     ###################################################
     goal = np.array([0.974, 0])
@@ -153,13 +163,14 @@ def reward_mushroomrl(env,next_state, action):
     #     r -=0.1 
     # if (actor.get_ee_pose(copy.deepcopy(next_state))[0][2])<des_z-tolerance*10 or (actor.get_ee_pose(copy.deepcopy(next_state))[0][2])>des_z+tolerance*10:
     #     r -=0.1
-    # r += constraint_reward
+    r += constraint_reward
     return r
 
 
 if __name__ == "__main__":
     args = parse_args()
-
+    # args = OmegaConf.load('train_sac.yaml')
+    # print(args.env_id)
     timestamp = time.time()
     formatted_time = time.strftime("%d-%m-%Y %H:%M", time.localtime(timestamp))
 
@@ -175,12 +186,14 @@ if __name__ == "__main__":
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    torch.backends.cudnn.deterministic = args.torch_deterministic
+    # torch.backends.cudnn.deterministic = args.torch_deterministic
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    env = make_env(args.env_id, args.seed, custom_reward_function=None)
+    # env = make_env(args.env_id, args.seed)
+    env = AirHockeyChallengeWrapper(args.env_id)
+    env.env_info["rl_info"].observation_space.seed = args.seed
 
     env_info = env.env_info
 
@@ -189,7 +202,7 @@ if __name__ == "__main__":
 
     action_dim = env_info["rl_info"].action_space.low.shape[0]
     action_dim_ = (action_dim,)
-    state, done = env.reset(), False #initial_state
+    # state, done = env.reset(), False #initial_state
 
     action_space = np.concatenate((env_info["robot"]["joint_pos_limit"], 
                                   env_info["robot"]["joint_vel_limit"]), axis=1)
@@ -199,6 +212,7 @@ if __name__ == "__main__":
     min_action = action_space[0,:]
 
     agent = SAC_Agent(env_info)
+    base_agent = build_agent(env_info)
 
     actor = agent.actor.to(device)
     qf1 = agent.qf1.to(device)
@@ -237,49 +251,52 @@ if __name__ == "__main__":
     start_time = time.time()
 
     # TRY NOT TO MODIFY: start the game
-    obs = env.reset()
+    obs, done = env.reset(),False
+    episode_reward = 0
+    episode_timesteps = 0
+    episode_num = 0
+    intermediate_t=0
+
     for global_step in range(args.total_timesteps):
-        # print(global_step)
-        # ALGO LOGIC: put action logic here
+
+        episode_timesteps += 1
+        intermediate_t +=1
+
         if global_step < args.learning_starts:
-            action = torch.Tensor([random.uniform(min_action[i] * 0.95 , max_action[i]* 0.95) for i in range(action_dim)]).reshape(2,7)
+            action = base_agent.draw_action(np.array(obs))
+            # action = torch.Tensor([random.uniform(min_action[i] * 0.95 , max_action[i]* 0.95) for i in range(action_dim)]).reshape(2,7)
             # actions = np.array([env.single_action_space.sample() for _ in range(env.num_env)])
         else:
             action, _, _ = actor.get_action(torch.Tensor(obs).to(device))
             
-        action = torch.Tensor(action).to(device).detach().cpu().numpy()
+        # action = torch.Tensor(action) #.to(device).detach().cpu().numpy()
 
         # TRY NOT TO MODIFY: execute the game and log data.
-        next_obs, reward, done, info = env.step(action)
+        next_obs, reward_, done, info = env.step(action)
+        # env.render()
+        next_obs_copy = copy.deepcopy(next_obs)
         reward = reward_mushroomrl(env,next_obs, action)
-        writer.add_scalar("rewards",reward, global_step)
-        done = info["success"]
+        writer.add_scalar("charts/rewards",reward, global_step)
+        # print(reward)
+        success = info["success"]
+        episode_reward += reward
+        obs = next_obs_copy
         # not_dones = 1 - dones 
     
-        # # TRY NOT TO MODIFY: record rewards for plotting purposes
-        # for info in infos:
-        #     if "episode" in info.keys():
-        #         print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-        #         writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-        #         writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
-        #         break
+        rb.add(obs, action.flatten(),next_obs_copy,reward,done)
 
-        # TRY NOT TO MODIFY: save data to reply buffer; handle `terminal_observation`
-        # real_next_obs = next_obs.copy()
-        
-        # if dones:
-        #     real_next_obs = terminal_state
-        # rb.add(obs, real_next_obs, actions, rewards, dones, infos)
-        rb.add(state,action.flatten(),next_obs,reward,done)
+        if done or intermediate_t > 300:
 
-        # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
-        
-        if not done:
-            obs = copy.deepcopy(next_obs)
-        else: 
-            obs = env.reset()
-    
-        # ALGO LOGIC: training.
+            print(f"global_step={global_step},Episode Num: {episode_num+1}, episodic_return={episode_reward:.3f}")
+            writer.add_scalar("charts/episodic_reward",episode_reward, global_step)
+            writer.add_scalar("charts/episodic_length", episode_timesteps, global_step)
+             
+            obs, done = env.reset(), False
+            episode_reward = 0
+            episode_timesteps = 0
+            episode_num += 1 
+            intermediate_t=0
+
         if global_step > args.learning_starts:
             data = rb.sample(args.batch_size)
 
