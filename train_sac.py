@@ -27,7 +27,7 @@ sys.path.append('./air_hockey_agent')
 from air_hockey_agent.sac_agent import SAC_Agent, SoftQNetwork, Actor
 from air_hockey_challenge.framework.evaluate_agent import evaluate
 
-# from air_hockey_agent.agent_builder import build_agent as sac_agent
+from air_hockey_agent.agent_builder import build_agent as sac_build
 
 def parse_args():
     # fmt: off
@@ -262,7 +262,8 @@ if __name__ == "__main__":
         episode_timesteps += 1
         intermediate_t +=1
 
-        if global_step < args.learning_starts:
+        if global_step < args.learning_starts: # base agent instead of random actions
+            
             action = base_agent.draw_action(np.array(obs))
             # action = torch.Tensor([random.uniform(min_action[i] * 0.95 , max_action[i]* 0.95) for i in range(action_dim)]).reshape(2,7)
             # actions = np.array([env.single_action_space.sample() for _ in range(env.num_env)])
@@ -349,14 +350,13 @@ if __name__ == "__main__":
                 for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
                 for param, target_param in zip(qf2.parameters(), qf2_target.parameters()):
-                    
-                    
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
-            if global_step % 200 == 0:
+            
+            if global_step % 2000:
                 agent.save(f"./models/sac_agent/sac")
                 print("model saved, evaluating:.....")
-                # evaluate(build_agent, "./logs", ["7dof-hit"], n_episodes=5, n_cores=4, seed=args.seed, generate_score=None,
-                #         quiet=True, render=True, interpolation_order=3)
+                evaluate(sac_build, "./logs", ["7dof-hit"], n_episodes=5, generate_score=None,
+                        quiet=True, render=True, interpolation_order=3)
                 
             if global_step % 100 == 0:
                 print("global step:.......", global_step)

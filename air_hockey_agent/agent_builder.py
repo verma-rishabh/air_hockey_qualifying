@@ -1,7 +1,7 @@
-from air_hockey_agent.TD3_agent import TD3_agent 
+# from air_hockey_agent.ppo import PPO_Agent
+from sac_agent import SAC_Agent
 
-
-def build_agent(env_info, **kwargs):
+def build_agent(env_info,agent_id=1):
     """
     Function where an Agent that controls the environments should be returned.
     The Agent should inherit from the mushroom_rl Agent base env.
@@ -13,6 +13,8 @@ def build_agent(env_info, **kwargs):
          (AgentBase) An instance of the Agent
     """
 
-    agent = TD3_agent(env_info,agent_id=1)
-    # agent.load("models/default/DDPG-v3_air-hockey_0")
-    return agent
+    agent = SAC_Agent(env_info,agent_id)
+    # agent = PPO_Agent(env_info,agent_id)
+    agent.load("./models/sac_agent/sac")
+
+    return agent    
