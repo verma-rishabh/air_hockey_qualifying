@@ -199,6 +199,7 @@ class train(AirHockeyChallengeWrapper):
                 r = 2 * r_hit + 10 * r_goal
 
         r -= 1e-3 * np.linalg.norm(action)
+        return r
     
     
     def reward_mushroomrl_constr(self, next_state, action):
