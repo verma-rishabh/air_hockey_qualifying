@@ -4,20 +4,21 @@ import argparse
 import os
 from air_hockey_challenge.framework.air_hockey_challenge_wrapper import AirHockeyChallengeWrapper
 from air_hockey_agent.agent_builder import build_agent
-import utils
+from utils import ReplayBuffer, solve_hit_config_ik_null
 from torch.utils.tensorboard.writer import SummaryWriter
 from omegaconf import OmegaConf
 from air_hockey_challenge.utils.kinematics import inverse_kinematics, jacobian
 from datetime import datetime
 import copy
+from reward import HitReward, DefendReward, PrepareReward
 
 class train(AirHockeyChallengeWrapper):
-    def __init__(self, env=None, custom_reward_function=None, interpolation_order=3, **kwargs):
+    def __init__(self, env=None, custom_reward_function=HitReward(), interpolation_order=1, **kwargs):
         # Load config file
         self.conf = OmegaConf.load('train_td3.yaml')
         env = self.conf.env
         # base env
-        super().__init__(env, custom_reward_function, interpolation_order, **kwargs)
+        super().__init__(env, custom_reward_function,interpolation_order, **kwargs)
         # seed
         self.seed(self.conf.agent.seed)
         torch.manual_seed(self.conf.agent.seed)
@@ -33,7 +34,8 @@ class train(AirHockeyChallengeWrapper):
         # vel_max = self.env_info['robot']['joint_vel_limit'][1] 
         # max_ = np.stack([pos_max,vel_max])
         # self.max_action  = max_.reshape(14,)
-        self.max_action = np.array([1.5,0.5,5])
+        self.min_action = np.array([0.65,-0.40,0])
+        self.max_action = np.array([1.32,0.40,1.5])
         # make dirs 
         self.make_dir()
         self.tensorboard = SummaryWriter(self.conf.agent.dump_dir + "/tensorboard/" + datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -43,37 +45,23 @@ class train(AirHockeyChallengeWrapper):
             print("loading model from file: ", policy_file)
             self.policy.load(self.conf.agent.dump_dir + f"/models/{policy_file}")
         
-        self.replay_buffer = utils.ReplayBuffer(self.observation_shape, self.action_shape)
+        self.replay_buffer = ReplayBuffer(self.observation_shape, self.action_shape)
     
     def _step(self,state,action):
+        action = self.policy.action_scaleup(action)
+        # print(action)
         des_pos = np.array([action[0],action[1],0.1645])                                #'ee_desired_height': 0.1645
-        _,x = inverse_kinematics(self.policy.robot_model, self.policy.robot_data,des_pos)
-        x_obs = np.zeros((14))
-        x_obs[6:13] = x
-        x_ = self.policy.get_ee_pose(x_obs)[0] 
-        y = self.policy.get_ee_pose(state)[0]
-        des_v = action[2]*(x_-y)/np.linalg.norm(x_-y)
-        des_v[2] = 0 
-        jac = jacobian(self.policy.robot_model, self.policy.robot_data,self.policy.get_joint_pos(state))
-        inv_jac = np.linalg.pinv(jac)
-        joint_vel = des_v@inv_jac.T[:3,:]
-        # if (_):
-        action = np.zeros((2,7))
-        # pos_max = env.base_env.env_info['robot']['joint_pos_limit'][1]
-        # vel_max = env.base_env.env_info['robot']['joint_vel_limit'][1] 
-        pos_min = np.array([-0.40476327, -0.20591463, -0.25040716, -1.84715099,\
-        -0.28212878, -0.30128033, -0.10303726])
-        pos_max = np.array([ 0.16055371, 1.19900776, 0.37962941, -0.92631058,\
-        0.3784197, 1.19376235, -0.01559517])
-        vel_min = self.env_info['robot']['joint_vel_limit'][0]
-        vel_max = self.env_info['robot']['joint_vel_limit'][1]
-        min_ = np.stack([pos_min,vel_min]) 
-        max_ = np.stack([pos_max,vel_max])
-        action[0,:] = x
-        action[1:] = joint_vel
-        action = action.clip(min_,max_)
-        next_state, reward, done, info = self.step(action)
-        reward = self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
+
+        x_ = [action[0],action[1]] 
+        y = self.policy.get_ee_pose(state)[0][:2]
+        des_v = action[2]*(x_-y)/(np.linalg.norm(x_-y)+1e-8)
+        des_v = np.concatenate((des_v,[0])) 
+        # _,x = inverse_kinematics(self.policy.robot_model, self.policy.robot_data,des_pos)
+        _,x = solve_hit_config_ik_null(self.policy.robot_model,self.policy.robot_data, des_pos, des_v, self.policy.get_joint_pos(state))
+        action = copy.deepcopy(x)
+        next_state, reward, done, info = self.step(x)
+        # reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
+
         return next_state, reward, done, info
 
     
@@ -87,79 +75,79 @@ class train(AirHockeyChallengeWrapper):
     def reward_mushroomrl(self, next_state, action):
 
         r = 0
-        mod_next_state = next_state                            # changing frame of puck pos (wrt origin)
-        mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
-        absorbing = self.base_env.is_absorbing(mod_next_state)
-        puck_pos, puck_vel = self.base_env.get_puck(mod_next_state)                     # extracts from obs therefore robot frame
+    #     mod_next_state = next_state                            # changing frame of puck pos (wrt origin)
+    #     mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
+    #     absorbing = self.base_env.is_absorbing(mod_next_state)
+    #     puck_pos, puck_vel = self.base_env.get_puck(mod_next_state)                     # extracts from obs therefore robot frame
 
 
-        ###################################################
-        goal = np.array([0.974, 0])
-        effective_width = 0.519 - 0.03165
+    #     ###################################################
+    #     goal = np.array([0.974, 0])
+    #     effective_width = 0.519 - 0.03165
 
-        # Calculate bounce point by assuming incoming angle = outgoing angle
-        w = (abs(puck_pos[1]) * goal[0] + goal[1] * puck_pos[0] - effective_width * puck_pos[
-            0] - effective_width *
-             goal[0]) / (abs(puck_pos[1]) + goal[1] - 2 * effective_width)
+    #     # Calculate bounce point by assuming incoming angle = outgoing angle
+    #     w = (abs(puck_pos[1]) * goal[0] + goal[1] * puck_pos[0] - effective_width * puck_pos[
+    #         0] - effective_width *
+    #          goal[0]) / (abs(puck_pos[1]) + goal[1] - 2 * effective_width)
 
 
-        side_point = np.array([w, np.copysign(effective_width, puck_pos[1])])
-        #print("side_point",side_point)
+    #     side_point = np.array([w, np.copysign(effective_width, puck_pos[1])])
+    #     #print("side_point",side_point)
 
-        vec_puck_side = (side_point - puck_pos[:2]) / np.linalg.norm(side_point - puck_pos[:2])
-        vec_puck_goal = (goal - puck_pos[:2]) / np.linalg.norm(goal - puck_pos[:2])
-        has_hit = self.base_env._check_collision("puck", "robot_1/ee")
+    #     vec_puck_side = (side_point - puck_pos[:2]) / np.linalg.norm(side_point - puck_pos[:2])
+    #     vec_puck_goal = (goal - puck_pos[:2]) / np.linalg.norm(goal - puck_pos[:2])
+    #     has_hit = self.base_env._check_collision("puck", "robot_1/ee")
 
         
-        ###################################################
+    #     ###################################################
         
         
 
-        # If puck is out of bounds
-        if absorbing:
-            # If puck is in the opponent goal
-            if (puck_pos[0] - self.env_info['table']['length'] / 2) > 0 and \
-                    (np.abs(puck_pos[1]) - self.env_info['table']['goal_width']) < 0:
-                    print("puck_pos",puck_pos,"absorbing",absorbing)
-                    r = 200
+    #     # If puck is out of bounds
+    #     if absorbing:
+    #         # If puck is in the opponent goal
+    #         if (puck_pos[0] - self.env_info['table']['length'] / 2) > 0 and \
+    #                 (np.abs(puck_pos[1]) - self.env_info['table']['goal_width']) < 0:
+    #                 print("puck_pos",puck_pos,"absorbing",absorbing)
+    #                 r = 200
 
-        else:
-            if not has_hit:
-                ee_pos = self.base_env.get_ee()[0]                                     # tO check
-                # print(ee_pos,self.policy.get_ee_pose(next_state)[0] - [1.51,0,0.1])
+    #     else:
+    #         if not has_hit:
+    #             ee_pos = self.base_env.get_ee()[0]                                     # tO check
+    #             # print(ee_pos,self.policy.get_ee_pose(next_state)[0] - [1.51,0,0.1])
 
-                dist_ee_puck = np.linalg.norm(puck_pos[:2] - ee_pos[:2])                # changing to 2D plane because used to normalise 2D vector
+    #             dist_ee_puck = np.linalg.norm(puck_pos[:2] - ee_pos[:2])                # changing to 2D plane because used to normalise 2D vector
 
-                vec_ee_puck = (puck_pos[:2] - ee_pos[:2]) / dist_ee_puck
+    #             vec_ee_puck = (puck_pos[:2] - ee_pos[:2]) / dist_ee_puck
 
-                cos_ang_side = np.clip(vec_puck_side @ vec_ee_puck, 0, 1)
+    #             cos_ang_side = np.clip(vec_puck_side @ vec_ee_puck, 0, 1)
 
-                # Reward if vec_ee_puck and vec_puck_goal have the same direction
-                cos_ang_goal = np.clip(vec_puck_goal @ vec_ee_puck, 0, 1)
-                cos_ang = np.max([cos_ang_goal, cos_ang_side])
+    #             # Reward if vec_ee_puck and vec_puck_goal have the same direction
+    #             cos_ang_goal = np.clip(vec_puck_goal @ vec_ee_puck, 0, 1)
+    #             cos_ang = np.max([cos_ang_goal, cos_ang_side])
 
-                r = np.exp(-8 * (dist_ee_puck - 0.08)) * cos_ang ** 2
-            else:
-                r_hit = 0.25 + min([1, (0.25 * puck_vel[0] ** 4)])
+    #             r = np.exp(-8 * (dist_ee_puck - 0.08)) * cos_ang ** 2
+    #         else:
+    #             r_hit = 0.25 + min([1, (0.25 * puck_vel[0] ** 4)])
 
-                r_goal = 0
-                if puck_pos[0] > 0.7:
-                    sig = 0.1
-                    r_goal = 1. / (np.sqrt(2. * np.pi) * sig) * np.exp(-np.power((puck_pos[1] - 0) / sig, 2.) / 2)
+    #             r_goal = 0
+    #             if puck_pos[0] > 0.7:
+    #                 sig = 0.1
+    #                 r_goal = 1. / (np.sqrt(2. * np.pi) * sig) * np.exp(-np.power((puck_pos[1] - 0) / sig, 2.) / 2)
 
-                r = 2 * r_hit + 10 * r_goal
+    #             r = 2 * r_hit + 10 * r_goal
 
-        r -= 1e-3 * np.linalg.norm(action)
+    #     r -= 1e-3 * np.linalg.norm(action)
         
         des_z = self.env_info['robot']['ee_desired_height']
         tolerance = 0.02
 
         if abs(self.policy.get_ee_pose(next_state)[0][1])>0.519:         # should replace with env variables some day
-            r -=0.5 
+            r -=0.1 
         if (self.policy.get_ee_pose(next_state)[0][0])<0.536:
-            r -=0.5 
-        if (self.policy.get_ee_pose(next_state)[0][2])<des_z-tolerance*10 or (self.policy.get_ee_pose(next_state)[0][2])>des_z+tolerance*10:
-            r -=0.5
+            r -=0.1 
+        if (self.policy.get_ee_pose(next_state)[0][2])<des_z-tolerance or (self.policy.get_ee_pose(next_state)[0][2])>des_z+tolerance:
+            r -=0.1
         return r
 
 
@@ -167,7 +155,7 @@ class train(AirHockeyChallengeWrapper):
 # Runs policy for X episodes and returns average reward
 # A fixed seed is used for the eval environment
     def eval_policy(self,t,eval_episodes=10):
-        
+        self.policy.actor.eval()
         for _ in range(eval_episodes):
             avg_reward = 0.
             # print(_)
@@ -176,14 +164,14 @@ class train(AirHockeyChallengeWrapper):
             while not done and episode_timesteps<100:
                 # print("ep",episode_timesteps)
 
-                action = self.policy.draw_action(np.array(state)).reshape(-1,)  
+                action = self.policy.select_action(state)
                 next_state, reward, done, info = self._step(state,action)
                 self.render()
                 avg_reward += reward
                 episode_timesteps+=1
                 state = next_state
             self.tensorboard.add_scalar("eval_reward", avg_reward,t+_)
-
+        self.policy.actor.train()
     # def _step(self,action):
     #     next_state, reward, done, info = self.step(action)
     #     reward = self.reward_mushroomrl(next_state, action) 
@@ -201,12 +189,12 @@ class train(AirHockeyChallengeWrapper):
            
             # Select action randomly or according to policy
             if t < self.conf.agent.start_timesteps:
-                action = np.random.uniform(-self.max_action,self.max_action,(self.action_shape,))
+                action = np.random.uniform(self.min_action,self.max_action,(self.action_shape,))
             else:
                 action = (
-                    self.policy.draw_action(np.array(state)).reshape(-1,)
+                    self.policy.select_action(np.array(state)).reshape(-1,)
                     + np.random.normal(0, self.max_action * self.conf.agent.expl_noise, size=self.action_shape)
-                    ).clip(-self.max_action, self.max_action)
+                    ).clip(-self.min_action, self.max_action)
             # Perform action
             next_state, reward, done, _ = self._step(state,action) 
             # self.render()
