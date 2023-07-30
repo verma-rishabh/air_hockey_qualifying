@@ -10,10 +10,10 @@ from omegaconf import OmegaConf
 # from air_hockey_challenge.utils.kinematics import inverse_kinematics, jacobian
 from datetime import datetime
 import copy
-from reward import HitReward, DefendReward, PrepareReward
+from reward import HitReward, DefendReward, PrepareReward,PrepareReward1
 
 class train(AirHockeyChallengeWrapper):
-    def __init__(self, env=None, custom_reward_function=PrepareReward(), interpolation_order=1, **kwargs):
+    def __init__(self, env=None, custom_reward_function=PrepareReward1(), interpolation_order=1, **kwargs):
         # Load config file
         self.conf = OmegaConf.load('train_tqc.yaml')
         env = self.conf.env
@@ -60,7 +60,8 @@ class train(AirHockeyChallengeWrapper):
         _,x = solve_hit_config_ik_null(self.policy.robot_model,self.policy.robot_data, des_pos, des_v, self.policy.get_joint_pos(state))
         action = copy.deepcopy(x)
         next_state, reward, done, info = self.step(x)
-        reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
+        # print(reward)
+        # reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
 
         return next_state, reward, done, info
 
@@ -166,7 +167,7 @@ class train(AirHockeyChallengeWrapper):
 
                 action = self.policy.select_action(state)
                 next_state, reward, done, info = self._step(state,action)
-                # self.render()
+                self.render()
                 avg_reward += reward
                 episode_timesteps+=1
                 state = next_state

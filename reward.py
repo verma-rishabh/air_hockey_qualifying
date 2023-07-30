@@ -157,6 +157,84 @@ class PrepareReward:
         return r
 
 
+class PrepareReward1:
+    def __init__(self):
+        self.has_hit = False
+
+    def __call__(self, mdp, state, action, next_state, absorbing):
+        puck_pos, puck_vel= mdp.get_puck(next_state)
+        puck_pos = puck_pos[:2]
+        puck_vel = puck_vel[:2]
+        ee_pos = mdp.get_ee()[0][:2]
+
+        if absorbing or mdp._data.time < mdp.env_info['dt'] * 2:
+            self.has_hit = False
+
+        if not self.has_hit:
+            self.has_hit = _has_hit(mdp, state)
+
+        
+        # Large bonus for being slow at the end
+        if absorbing and abs(puck_pos[1]) < 0.47:
+            r = 100 * np.exp(-2 * np.linalg.norm(puck_vel))
+            return r
+
+        if absorbing and puck_pos[0] >= -0.6:
+            r = 100 * np.exp(-2 * np.linalg.norm(puck_vel))
+            return r
+
+        # After hit
+        if self.has_hit:
+            #side
+            if puck_pos[0] < -0.35 and abs(puck_pos[1]) < 0.47:
+                r_vel_x = max([0, 1 - (10 * (np.exp(abs(puck_vel[0])) - 1))])
+
+                #extra
+                ee_des = np.array([-0.6, puck_pos[1]])
+                # dist_ee_des = np.linalg.norm(ee_pos - mdp.ee_end_pos)
+                dist_ee_des = np.linalg.norm(ee_pos - ee_des)
+                r_ee = 0.5 - dist_ee_des
+
+                r = r_vel_x + r_ee + 1
+            # bottom
+            if -0.6 > puck_pos[0] > -0.9 and abs(puck_pos[1]) < 0.47:
+                sig = 0.1
+
+                r_x = 1. / (np.sqrt(2. * np.pi) * sig) * np.exp(-np.power((puck_pos[0] + 0.75) / sig, 2.) / 2)
+
+                r_y = 2 - abs(puck_vel[1])
+                dist_ee_des = np.linalg.norm(ee_pos - mdp.ee_end_pos)
+                r_ee = 0.5 * np.exp(-3 * dist_ee_des)
+                r = r_x + r_y + r_ee + 1
+
+            else:
+                r = 0
+        # Before hit
+        else:
+            dist_ee_puck = np.linalg.norm(puck_pos - ee_pos)
+            vec_ee_puck = (puck_pos - ee_pos) / dist_ee_puck
+            cos_ang_bottom = np.clip(vec_ee_puck @ np.array([-1, 0]), 0, 1)
+            cos_ang_side = np.clip(vec_ee_puck @ np.array([0.2, np.copysign(0.8, puck_pos[1])]), 0, 1)
+            cos_ang = max([cos_ang_side, cos_ang_bottom])
+            cos_ang = np.clip(vec_ee_puck @ np.array([0, np.copysign(1, puck_pos[1])]), 0, 1)
+
+            r = np.exp(-8 * (dist_ee_puck - 0.08)) * cos_ang ** 2
+
+        
+
+        q = next_state[mdp.env_info['joint_pos_ids']]
+        dq = next_state[mdp.env_info['joint_vel_ids']]
+        constraints = mdp.env_info['constraints'].keys()
+
+        constraint_reward = 0
+        for constr in constraints:
+            error = mdp.env_info['constraints'].get(constr).fun(q, dq)
+            constr_error = np.sum(error[error > 0]) if np.any(error > 0) else 0
+            constraint_reward -= constr_error
+        r += constraint_reward/10
+        return r
+
+
 def _has_hit(mdp, state):
     ee_pos, ee_vel = mdp.get_ee()
     puck_cur_pos, _ = mdp.get_puck(state)
