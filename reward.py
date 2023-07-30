@@ -57,12 +57,12 @@ class HitReward:
                 r = min([1, 0.3 * np.maximum(puck_vel[0], 0.)])
 
                 # Encourage the puck to end in the middle
-                if puck_pos[0] > 0.7 and puck_vel[0] > 0.1:
-                    r += 0.5 - np.abs(puck_pos[1])
+                # if puck_pos[0] > 0.7 and puck_vel[0] > 0.1:
+                #     r += 0.5 - np.abs(puck_pos[1])
 
-                # penalizes the joint velocity
-                q = mdp.get_joints(next_state, 1)[0]
-                r -= 0.01 * np.linalg.norm(q - mdp.init_state)
+                # # penalizes the joint velocity
+                # q = mdp.get_joints(next_state, 1)[0]
+                # r -= 0.01 * np.linalg.norm(q - mdp.init_state)
         # print(r)
         return r
 
@@ -203,7 +203,8 @@ class PrepareReward1:
                 r_x = 1. / (np.sqrt(2. * np.pi) * sig) * np.exp(-np.power((puck_pos[0] + 0.75) / sig, 2.) / 2)
 
                 r_y = 2 - abs(puck_vel[1])
-                dist_ee_des = np.linalg.norm(ee_pos - mdp.ee_end_pos)
+                ee_des = np.array([-0.6, puck_pos[1]])
+                dist_ee_des = np.linalg.norm(ee_pos - ee_des)
                 r_ee = 0.5 * np.exp(-3 * dist_ee_des)
                 r = r_x + r_y + r_ee + 1
 
@@ -222,16 +223,16 @@ class PrepareReward1:
 
         
 
-        q = next_state[mdp.env_info['joint_pos_ids']]
-        dq = next_state[mdp.env_info['joint_vel_ids']]
-        constraints = mdp.env_info['constraints'].keys()
+        # q = next_state[mdp.env_info['joint_pos_ids']]
+        # dq = next_state[mdp.env_info['joint_vel_ids']]
+        # constraints = mdp.env_info['constraints'].keys()
 
-        constraint_reward = 0
-        for constr in constraints:
-            error = mdp.env_info['constraints'].get(constr).fun(q, dq)
-            constr_error = np.sum(error[error > 0]) if np.any(error > 0) else 0
-            constraint_reward -= constr_error
-        r += constraint_reward/10
+        # constraint_reward = 0
+        # for constr in constraints:
+        #     error = mdp.env_info['constraints'].get(constr).fun(q, dq)
+        #     constr_error = np.sum(error[error > 0]) if np.any(error > 0) else 0
+        #     constraint_reward -= constr_error
+        # r += constraint_reward/10
         return r
 
 
