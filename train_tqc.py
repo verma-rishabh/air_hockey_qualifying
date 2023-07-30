@@ -227,7 +227,7 @@ class train(AirHockeyChallengeWrapper):
                 episode_num += 1 
                 
             if (t + 1) % self.conf.agent.eval_freq == 0:
-                self.eval_policy(t)
+                # self.eval_policy(t)
                 self.policy.save(self.conf.agent.dump_dir + f"/models/{self.conf.agent.file_name}")
 
 x = train()
