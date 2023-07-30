@@ -53,7 +53,7 @@ def parse_args():
         help="target smoothing coefficient (default: 0.005)")
     parser.add_argument("--batch-size", type=int, default=512,
         help="the batch size of sample from the reply memory")
-    parser.add_argument("--learning-starts", type=int, default=1000,
+    parser.add_argument("--learning-starts", type=int, default=5000,
         help="timestep to start learning")
     parser.add_argument("--policy-lr", type=float, default=1e-4,
         help="the learning rate of the policy network optimizer")
