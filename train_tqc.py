@@ -60,7 +60,7 @@ class train(AirHockeyChallengeWrapper):
         _,x = solve_hit_config_ik_null(self.policy.robot_model,self.policy.robot_data, des_pos, des_v, self.policy.get_joint_pos(state))
         action = copy.deepcopy(x)
         next_state, reward, done, info = self.step(x)
-        reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
+        reward = self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
 
         return next_state, reward, done, info
 
@@ -75,79 +75,94 @@ class train(AirHockeyChallengeWrapper):
     def reward_mushroomrl(self, next_state, action):
 
         r = 0
-    #     mod_next_state = next_state                            # changing frame of puck pos (wrt origin)
-    #     mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
-    #     absorbing = self.base_env.is_absorbing(mod_next_state)
-    #     puck_pos, puck_vel = self.base_env.get_puck(mod_next_state)                     # extracts from obs therefore robot frame
+        mod_next_state = next_state                            # changing frame of puck pos (wrt origin)
+        mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
+        absorbing = self.base_env.is_absorbing(mod_next_state)
+        puck_pos, puck_vel = self.base_env.get_puck(mod_next_state)                     # extracts from obs therefore robot frame
+
+        q = next_state[self.env_info['joint_pos_ids']]
+        dq = next_state[self.env_info['joint_vel_ids']]
+        constraints = self.env_info['constraints'].keys()
+
+        constraint_reward = 0
+        for constr in constraints:
+            error = self.env_info['constraints'].get(constr).fun(q, dq)
+            constr_error = np.sum(error[error > 0]) if np.any(error > 0) else 0
+            constraint_reward -= constr_error
+            
+        # constraint_reward *= 300 
+
+        # if constraint_reward !=0:
+        #     print("constraint reward", constraint_reward)
+
+        ###################################################
+        goal = np.array([0.974, 0])
+        effective_width = 0.519 - 0.03165
+
+        # Calculate bounce point by assuming incoming angle = outgoing angle
+        w = (abs(puck_pos[1]) * goal[0] + goal[1] * puck_pos[0] - effective_width * puck_pos[
+            0] - effective_width *
+             goal[0]) / (abs(puck_pos[1]) + goal[1] - 2 * effective_width)
 
 
-    #     ###################################################
-    #     goal = np.array([0.974, 0])
-    #     effective_width = 0.519 - 0.03165
+        side_point = np.array([w, np.copysign(effective_width, puck_pos[1])])
+        #print("side_point",side_point)
 
-    #     # Calculate bounce point by assuming incoming angle = outgoing angle
-    #     w = (abs(puck_pos[1]) * goal[0] + goal[1] * puck_pos[0] - effective_width * puck_pos[
-    #         0] - effective_width *
-    #          goal[0]) / (abs(puck_pos[1]) + goal[1] - 2 * effective_width)
-
-
-    #     side_point = np.array([w, np.copysign(effective_width, puck_pos[1])])
-    #     #print("side_point",side_point)
-
-    #     vec_puck_side = (side_point - puck_pos[:2]) / np.linalg.norm(side_point - puck_pos[:2])
-    #     vec_puck_goal = (goal - puck_pos[:2]) / np.linalg.norm(goal - puck_pos[:2])
-    #     has_hit = self.base_env._check_collision("puck", "robot_1/ee")
+        vec_puck_side = (side_point - puck_pos[:2]) / np.linalg.norm(side_point - puck_pos[:2])
+        vec_puck_goal = (goal - puck_pos[:2]) / np.linalg.norm(goal - puck_pos[:2])
+        has_hit = self.base_env._check_collision("puck", "robot_1/ee")
 
         
-    #     ###################################################
+        ###################################################
         
         
 
-    #     # If puck is out of bounds
-    #     if absorbing:
-    #         # If puck is in the opponent goal
-    #         if (puck_pos[0] - self.env_info['table']['length'] / 2) > 0 and \
-    #                 (np.abs(puck_pos[1]) - self.env_info['table']['goal_width']) < 0:
-    #                 print("puck_pos",puck_pos,"absorbing",absorbing)
-    #                 r = 200
+        # If puck is out of bounds
+        if absorbing:
+            # If puck is in the opponent goal
+            if (puck_pos[0] - self.env_info['table']['length'] / 2) > 0 and \
+                    (np.abs(puck_pos[1]) - self.env_info['table']['goal_width']) < 0:
+                    print("puck_pos",puck_pos,"absorbing",absorbing)
+                    r = 200
 
-    #     else:
-    #         if not has_hit:
-    #             ee_pos = self.base_env.get_ee()[0]                                     # tO check
-    #             # print(ee_pos,self.policy.get_ee_pose(next_state)[0] - [1.51,0,0.1])
+        else:
+            if not has_hit:
+                ee_pos = self.base_env.get_ee()[0]                                     # tO check
+                # print(ee_pos,self.policy.get_ee_pose(next_state)[0] - [1.51,0,0.1])
 
-    #             dist_ee_puck = np.linalg.norm(puck_pos[:2] - ee_pos[:2])                # changing to 2D plane because used to normalise 2D vector
+                dist_ee_puck = np.linalg.norm(puck_pos[:2] - ee_pos[:2])                # changing to 2D plane because used to normalise 2D vector
 
-    #             vec_ee_puck = (puck_pos[:2] - ee_pos[:2]) / dist_ee_puck
+                vec_ee_puck = (puck_pos[:2] - ee_pos[:2]) / dist_ee_puck
 
-    #             cos_ang_side = np.clip(vec_puck_side @ vec_ee_puck, 0, 1)
+                cos_ang_side = np.clip(vec_puck_side @ vec_ee_puck, 0, 1)
 
-    #             # Reward if vec_ee_puck and vec_puck_goal have the same direction
-    #             cos_ang_goal = np.clip(vec_puck_goal @ vec_ee_puck, 0, 1)
-    #             cos_ang = np.max([cos_ang_goal, cos_ang_side])
+                # Reward if vec_ee_puck and vec_puck_goal have the same direction
+                cos_ang_goal = np.clip(vec_puck_goal @ vec_ee_puck, 0, 1)
+                cos_ang = np.max([cos_ang_goal, cos_ang_side])
 
-    #             r = np.exp(-8 * (dist_ee_puck - 0.08)) * cos_ang ** 2
-    #         else:
-    #             r_hit = 0.25 + min([1, (0.25 * puck_vel[0] ** 4)])
+                r = np.exp(-8 * (dist_ee_puck - 0.08)) * cos_ang ** 2
+            else:
+                r_hit = 0.25 + min([1, (0.25 * puck_vel[0] ** 4)])
 
-    #             r_goal = 0
-    #             if puck_pos[0] > 0.7:
-    #                 sig = 0.1
-    #                 r_goal = 1. / (np.sqrt(2. * np.pi) * sig) * np.exp(-np.power((puck_pos[1] - 0) / sig, 2.) / 2)
+                r_goal = 0
+                if puck_pos[0] > 0.7:
+                    sig = 0.1
+                    r_goal = 1. / (np.sqrt(2. * np.pi) * sig) * np.exp(-np.power((puck_pos[1] - 0) / sig, 2.) / 2)
 
-    #             r = 2 * r_hit + 10 * r_goal
+                r = 2 * r_hit + 10 * r_goal
 
-    #     r -= 1e-3 * np.linalg.norm(action)
+        # r -= 1e-3 * np.linalg.norm(action)
         
-        des_z = self.env_info['robot']['ee_desired_height']
-        tolerance = 0.02
+        # des_z = self.env_info['robot']['ee_desired_height']
+        # tolerance = 0.02
 
-        if abs(self.policy.get_ee_pose(next_state)[0][1])>0.519:         # should replace with env variables some day
-            r -=0.1 
-        if (self.policy.get_ee_pose(next_state)[0][0])<0.536:
-            r -=0.1 
-        if (self.policy.get_ee_pose(next_state)[0][2])<des_z-tolerance or (self.policy.get_ee_pose(next_state)[0][2])>des_z+tolerance:
-            r -=0.1
+        # if abs(self.policy.get_ee_pose(next_state)[0][1])>0.519:         # should replace with env variables some day
+        #     r -=0.1 
+        # if (self.policy.get_ee_pose(next_state)[0][0])<0.536:
+        #     r -=0.1 
+        # if (self.policy.get_ee_pose(next_state)[0][2])<des_z-tolerance or (self.policy.get_ee_pose(next_state)[0][2])>des_z+tolerance:
+        #     r -=0.1
+        r += constraint_reward
         return r
 
 

@@ -14,5 +14,5 @@ def build_agent(env_info, **kwargs):
     """
 
     agent = TD3_agent(env_info,agent_id=1)
-    # agent.load("models/default/DDPG-v3_air-hockey_0")
+    agent.load("hit/v3/td3/models/exp-v03-TD3-sanity_check_7dof-hit_0")
     return agent
