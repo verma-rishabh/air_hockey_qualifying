@@ -14,5 +14,5 @@ def build_agent(env_info, **kwargs):
     """
 
     agent = TQC_agent(env_info,agent_id=1)
-    agent.load("./defend/models/v2/tqc-defend-mushroomrl_7dof-defend_0")
+    # agent.load("./defend/models/v2/tqc-defend-mushroomrl_7dof-defend_0")
     return agent
