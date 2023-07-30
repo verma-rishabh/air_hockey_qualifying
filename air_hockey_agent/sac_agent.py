@@ -25,7 +25,7 @@ class SoftQNetwork(nn.Module):
         self.fc1 = nn.Linear(state_dim + action_dim, 256)
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 1)
-        self.lnorm1 = nn.LayerNorm([256, 256])
+        self.lnorm1 = nn.LayerNorm(256)
         self.bnorm1 = nn.BatchNorm1d(256)  
 
 
@@ -34,7 +34,7 @@ class SoftQNetwork(nn.Module):
         
         x = torch.cat([x, a], 1)
         x = F.relu(self.fc1(x))
-        x = self.bnorm1(x)
+        x = self.lnorm1(x)
         x = F.relu(self.fc2(x))
         x = self.lnorm1(x)
         x = self.fc3(x)
@@ -50,6 +50,7 @@ class Actor(nn.Module):
         action_dim = env_info["rl_info"].action_space.low.shape[0]
         self.fc1 = nn.Linear(state_dim, 256)
         self.fc2 = nn.Linear(256, 256)
+        self.lnorm1 = nn.LayerNorm(256)
         self.fc_mean = nn.Linear(256, action_dim)
         self.fc_logstd = nn.Linear(256, action_dim)
         _action_space = np.concatenate((env_info["robot"]["joint_pos_limit"], 
@@ -70,7 +71,9 @@ class Actor(nn.Module):
 
         x = x.to(torch.float32).to(device)
         x = F.relu(self.fc1(x))
+        # x = self.lnorm1(x)
         x = F.relu(self.fc2(x))
+        x = self.lnorm1(x)
         mean = self.fc_mean(x)
         log_std = self.fc_logstd(x)
         log_std = torch.tanh(log_std)

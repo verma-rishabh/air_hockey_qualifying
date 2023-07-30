@@ -51,9 +51,9 @@ def parse_args():
         help="the discount factor gamma")
     parser.add_argument("--tau", type=float, default=0.01,
         help="target smoothing coefficient (default: 0.005)")
-    parser.add_argument("--batch-size", type=int, default=256,
+    parser.add_argument("--batch-size", type=int, default=512,
         help="the batch size of sample from the reply memory")
-    parser.add_argument("--learning-starts", type=int, default=5000,
+    parser.add_argument("--learning-starts", type=int, default=1000,
         help="timestep to start learning")
     parser.add_argument("--policy-lr", type=float, default=1e-4,
         help="the learning rate of the policy network optimizer")
@@ -78,6 +78,91 @@ def make_env(env_id,seed):
     env = AirHockeyChallengeWrapper(env_id)
     env.env_info["rl_info"].observation_space.seed = seed
     return env
+
+def reward_mushroomrl_constr(self, next_state, action):
+        """
+        taking constraint violations innto account
+        """
+        # Get the joint position and velocity from the observation
+        q = next_state[self.env_info['joint_pos_ids']]
+        dq = next_state[self.env_info['joint_vel_ids']]
+
+        constraints = ["joint_pos_constr", "joint_vel_constr", "ee_constr", "link_constr"]
+        pos_constr = self.env_info['constraints'].get("joint_pos_constr").fun(q, dq)
+        vel_constr = self.env_info['constraints'].get("joint_vel_constr").fun(q, dq)
+        ee_constr = self.env_info['constraints'].get("ee_constr").fun(q, dq)
+        link_constr = self.env_info['constraints'].get("link_constr").fun(q, dq)
+        
+        pos_err = np.sum(pos_constr[pos_constr > 0]) if np.any(pos_constr > 0) else 0
+        vel_err = np.sum(vel_constr[vel_constr > 0]) if np.any(vel_constr > 0) else 0
+        ee_err = np.sum(ee_constr[ee_constr > 0]) if np.any(ee_constr > 0) else 0
+        link_err = np.sum(link_constr[link_constr > 0]) if np.any(link_constr > 0) else 0
+
+        constraint_reward = - (pos_err + vel_err + ee_err + link_err)
+
+        # if constraint_reward !=0 :
+            # print("constraint reward", constraint_reward)
+
+        r = 0
+        mod_next_state = next_state # changing frame of puck pos (wrt origin)
+        mod_next_state[:3]  = mod_next_state[:3] - [1.51,0,0.1]
+        absorbing = self.base_env.is_absorbing(mod_next_state)
+        puck_pos, puck_vel = self.base_env.get_puck(mod_next_state)                     # extracts from obs therefore robot frame
+
+        goal = np.array([0.974, 0])
+        effective_width = 0.519 - 0.03165
+
+        # Calculate bounce point by assuming incoming angle = outgoing angle
+        w = (abs(puck_pos[1]) * goal[0] + goal[1] * puck_pos[0] - effective_width * puck_pos[
+            0] - effective_width *
+                goal[0]) / (abs(puck_pos[1]) + goal[1] - 2 * effective_width)
+
+
+        side_point = np.array([w, np.copysign(effective_width, puck_pos[1])])
+        #print("side_point",side_point)
+
+        vec_puck_side = (side_point - puck_pos[:2]) / np.linalg.norm(side_point - puck_pos[:2])
+        vec_puck_goal = (goal - puck_pos[:2]) / np.linalg.norm(goal - puck_pos[:2])
+        has_hit = self.base_env._check_collision("puck", "robot_1/ee")    
+        
+        # If puck is out of bounds
+        if absorbing:
+            # If puck is in the opponent goal
+            if (puck_pos[0] - self.env_info['table']['length'] / 2) > 0 and \
+                    (np.abs(puck_pos[1]) - self.env_info['table']['goal_width']) < 0:
+                    # print("puck_pos",puck_pos,"absorbing",absorbing)
+                r = 200
+
+        else:
+            if not has_hit:
+                ee_pos = self.base_env.get_ee()[0]                                     # tO check
+                # print(ee_pos,self.policy.get_ee_pose(next_state)[0] - [1.51,0,0.1])
+
+                dist_ee_puck = np.linalg.norm(puck_pos[:2] - ee_pos[:2])                # changing to 2D plane because used to normalise 2D vector
+
+                vec_ee_puck = (puck_pos[:2] - ee_pos[:2]) / dist_ee_puck
+
+                cos_ang_side = np.clip(vec_puck_side @ vec_ee_puck, 0, 1)
+
+                # Reward if vec_ee_puck and vec_puck_goal have the same direction
+                cos_ang_goal = np.clip(vec_puck_goal @ vec_ee_puck, 0, 1)
+                cos_ang = np.max([cos_ang_goal, cos_ang_side])
+
+                r = np.exp(-8 * (dist_ee_puck - 0.08)) * cos_ang ** 2
+            else:
+                r_hit = 0.25 + min([1, (0.25 * puck_vel[0] ** 4)])
+
+                r_goal = 0
+                if puck_pos[0] > 0.7:
+                    sig = 0.1
+                    r_goal = 1. / (np.sqrt(2. * np.pi) * sig) * np.exp(-np.power((puck_pos[1] - 0) / sig, 2.) / 2)
+
+                r = 2 * r_hit + 10 * r_goal
+
+        r -= 1e-3 * np.linalg.norm(action)
+        r += constraint_reward/10
+
+        return r
 
 def reward_mushroomrl(env,next_state, action):
     
@@ -240,14 +325,6 @@ if __name__ == "__main__":
     # env_info["rl_info"].action_space.high.dtype = np.float32
 
     rb = ReplayBuffer(state_dim, action_dim, max_size=args.buffer_size)
-
-    # rb = ReplayBuffer(
-    #     args.buffer_size,
-    #     env.single_observation_space,
-    #     env.single_action_space,
-    #     device,
-    #     handle_timeout_termination=True,
-    # )
     start_time = time.time()
 
     # TRY NOT TO MODIFY: start the game
@@ -276,7 +353,7 @@ if __name__ == "__main__":
         next_obs, reward_, done, info = env.step(action)
         # env.render()
         next_obs_copy = copy.deepcopy(next_obs)
-        reward = reward_mushroomrl(env,next_obs, action)
+        reward = reward_mushroomrl_constr(env,next_obs, action)
         writer.add_scalar("charts/rewards",reward, global_step)
         # print(reward)
         success = info["success"]
@@ -351,15 +428,10 @@ if __name__ == "__main__":
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
                 for param, target_param in zip(qf2.parameters(), qf2_target.parameters()):
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
-            
-            if global_step % 2000:
-                agent.save(f"./models/sac_agent/sac")
-                print("model saved, evaluating:.....")
-                evaluate(sac_build, "./logs", ["7dof-hit"], n_episodes=5, generate_score=None,
-                        quiet=True, render=True, interpolation_order=3)
-                
+
             if global_step % 100 == 0:
-                print("global step:.......", global_step)
+                
+                print(f"global step....{global_step}")
                 writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf2_values", qf2_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
@@ -371,7 +443,14 @@ if __name__ == "__main__":
                 writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
                 if args.autotune:
                     writer.add_scalar("losses/alpha_loss", alpha_loss.item(), global_step)
-
+            
+            if global_step % 6000 == 0:
+                agent.save(f"./models/sac_agent/sac")
+                print(f"model saved, evaluating:.....global_step = {global_step}")
+                evaluate(sac_build, "./logs", ["7dof-hit"], n_episodes=5, generate_score=None,
+                        quiet=True, render=False, interpolation_order=3)
+                
+    
     agent.save(f"./models/sac_agent/sac")
     print("model saved at")
     env.stop()
