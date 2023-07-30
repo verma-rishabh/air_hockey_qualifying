@@ -149,7 +149,7 @@ class train(AirHockeyChallengeWrapper):
                     sig = 0.1
                     r_goal = 1. / (np.sqrt(2. * np.pi) * sig) * np.exp(-np.power((puck_pos[1] - 0) / sig, 2.) / 2)
 
-                r = 2 * r_hit + 10 * r_goal
+                r = 20 * r_hit + 100 * r_goal
 
         # r -= 1e-3 * np.linalg.norm(action)
         
