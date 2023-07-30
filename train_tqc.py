@@ -60,7 +60,7 @@ class train(AirHockeyChallengeWrapper):
         _,x = solve_hit_config_ik_null(self.policy.robot_model,self.policy.robot_data, des_pos, des_v, self.policy.get_joint_pos(state))
         action = copy.deepcopy(x)
         next_state, reward, done, info = self.step(x)
-        reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
+        # reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
 
         return next_state, reward, done, info
 

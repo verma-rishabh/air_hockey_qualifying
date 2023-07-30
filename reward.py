@@ -81,6 +81,16 @@ class DefendReward:
         if not self.has_hit:
             self.has_hit = _has_hit(mdp, state)
 
+        q = next_state[mdp.env_info['joint_pos_ids']]
+        dq = next_state[mdp.env_info['joint_vel_ids']]
+        constraints = mdp.env_info['constraints'].keys()
+
+        constraint_reward = 0
+        for constr in constraints:
+            error = mdp.env_info['constraints'].get(constr).fun(q, dq)
+            constr_error = np.sum(error[error > 0]) if np.any(error > 0) else 0
+            constraint_reward -= constr_error
+
         # This checks weather the puck is in our goal, heavy penalty if it is.
         # If absorbing the puck is out of bounds of the table.
         if absorbing:
@@ -107,9 +117,7 @@ class DefendReward:
                 dist_ee_puck = ee_des - ee_pos
                 r = - np.linalg.norm(dist_ee_puck)
 
-        # penalizes the joint velocity
-        q = mdp.get_joints(next_state)[0]
-        r -= 0.005 * np.linalg.norm(q - mdp.init_state)
+        r += constraint_reward
         return r
 
 
