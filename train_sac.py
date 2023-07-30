@@ -51,7 +51,7 @@ def parse_args():
         help="the discount factor gamma")
     parser.add_argument("--tau", type=float, default=0.01,
         help="target smoothing coefficient (default: 0.005)")
-    parser.add_argument("--batch-size", type=int, default=512,
+    parser.add_argument("--batch-size", type=int, default=1024,
         help="the batch size of sample from the reply memory")
     parser.add_argument("--learning-starts", type=int, default=5000,
         help="timestep to start learning")
@@ -65,7 +65,7 @@ def parse_args():
         help="the frequency of updates for the target nerworks")
     parser.add_argument("--noise-clip", type=float, default=0.5,
         help="noise clip parameter of the Target Policy Smoothing Regularization")
-    parser.add_argument("--alpha", type=float, default=0.01, #0.2,
+    parser.add_argument("--alpha", type=float, default=0.0008,
             help="Entropy regularization coefficient.")
     parser.add_argument("--autotune", type=lambda x:bool(strtobool(x)), default=False, nargs="?", const=True,
         help="automatic tuning of the entropy coefficient")
@@ -160,7 +160,7 @@ def reward_mushroomrl_constr(self, next_state, action):
                 r = 2 * r_hit + 10 * r_goal
 
         r -= 1e-3 * np.linalg.norm(action)
-        r += constraint_reward/10
+        r += (constraint_reward/10)
 
         return r
 
@@ -324,7 +324,38 @@ if __name__ == "__main__":
     # env_info["rl_info"].action_space.low.dtype = np.float32
     # env_info["rl_info"].action_space.high.dtype = np.float32
 
-    rb = ReplayBuffer(state_dim, action_dim, max_size=args.buffer_size)
+    # the offline buffer ------------------------------------------
+    obs, done = env.reset(),False
+    episode_reward = 0
+    episode_timesteps = 0
+    episode_num = 0
+    intermediate_t=0
+    rb_offline = ReplayBuffer(state_dim, action_dim, max_size=100000)
+    print("populating the offline buffer:.......")
+    for i in range(10000):
+        action = base_agent.draw_action(np.array(obs))
+        next_obs, reward_, done, info = env.step(action)
+        # env.render()
+        next_obs_copy = copy.deepcopy(next_obs)
+        reward = reward_mushroomrl_constr(env,next_obs, action)
+        success = info["success"]
+        episode_reward += reward
+        obs = next_obs_copy
+        rb_offline.add(obs, action.flatten(),next_obs_copy,reward,done)
+
+        if done or intermediate_t > 300:
+             
+            obs, done = env.reset(), False
+            episode_reward = 0
+            episode_timesteps = 0
+            episode_num += 1 
+            intermediate_t=0
+
+    # the offline buffer ------------------------------------------
+
+    # the online buffer ------------------------------------------
+
+    rb_online = ReplayBuffer(state_dim, action_dim, max_size=args.buffer_size)
     start_time = time.time()
 
     # TRY NOT TO MODIFY: start the game
@@ -341,9 +372,10 @@ if __name__ == "__main__":
 
         if global_step < args.learning_starts: # base agent instead of random actions
             
-            action = base_agent.draw_action(np.array(obs))
-            # action = torch.Tensor([random.uniform(min_action[i] * 0.95 , max_action[i]* 0.95) for i in range(action_dim)]).reshape(2,7)
-            # actions = np.array([env.single_action_space.sample() for _ in range(env.num_env)])
+            # if global_step%2==0:
+                # action = base_agent.draw_action(np.array(obs))
+            # else:
+            action = torch.Tensor([random.uniform(min_action[i] * 0.95 , max_action[i]* 0.95) for i in range(action_dim)]).reshape(2,7)
         else:
             action, _, _ = actor.get_action(torch.Tensor(obs).to(device))
             
@@ -361,7 +393,7 @@ if __name__ == "__main__":
         obs = next_obs_copy
         # not_dones = 1 - dones 
     
-        rb.add(obs, action.flatten(),next_obs_copy,reward,done)
+        rb_online.add(obs, action.flatten(),next_obs_copy,reward,done)
 
         if done or intermediate_t > 300:
 
@@ -376,7 +408,15 @@ if __name__ == "__main__":
             intermediate_t=0
 
         if global_step > args.learning_starts:
-            data = rb.sample(args.batch_size)
+            data1 = rb_online.sample(int(args.batch_size/2))
+            data2 = rb_offline.sample(int(args.batch_size/2))
+            data = (
+                    torch.cat((data1[0], data2[0]), dim=0),
+                    torch.cat((data1[1], data2[1]), dim=0),
+                    torch.cat((data1[2], data2[2]), dim=0),
+                    torch.cat((data1[3], data2[3]), dim=0),
+                    torch.cat((data1[4], data2[4]), dim=0)
+                    )
 
             with torch.no_grad():
                 next_state_actions, next_state_log_pi, _ = actor.get_action(data[2])
