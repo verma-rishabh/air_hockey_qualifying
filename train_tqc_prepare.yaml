@@ -14,6 +14,5 @@ agent:
     max_episode_steps: 500
     save_model: True     
     load_model: ""                             
-    dump_dir : /run/media/luke/Data/uni/SS2023/DL Lab/Project/qualifying/V3/tqc/prepare
-    # dump_dir : ./prepare
+    dump_dir : ./prepare
     file_name : ${agent.policy}_${env}_${agent.seed}
