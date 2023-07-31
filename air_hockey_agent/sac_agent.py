@@ -69,7 +69,8 @@ class Actor(nn.Module):
 
     def forward(self, x):
 
-        x = x.to(torch.float32).to(device)
+        x = x.to(torch.float32)#.to(device)
+        x = x.to(device)
         x = F.relu(self.fc1(x))
         # x = self.lnorm1(x)
         x = F.relu(self.fc2(x))
