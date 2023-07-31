@@ -1,5 +1,6 @@
 # docs and experiment results can be found at https://docs.cleanrl.dev/rl-algorithms/sac/#sac_continuous_actionpy
 import argparse
+from tqdm import tqdm
 import os
 import random
 import tqdm
@@ -34,7 +35,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp-name", type=str, default=os.path.basename(__file__).rstrip(".py"),
         help="the name of this experiment")
-    parser.add_argument("--seed", type=int, default=42,
+    parser.add_argument("--seed", type=int, default=40,
         help="seed of the experiment")
     parser.add_argument("--torch-deterministic", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="if toggled, `torch.backends.cudnn.deterministic=False`")
@@ -49,25 +50,25 @@ def parse_args():
         help="the replay memory buffer size")
     parser.add_argument("--gamma", type=float, default=0.99,
         help="the discount factor gamma")
-    parser.add_argument("--tau", type=float, default=0.01,
+    parser.add_argument("--tau", type=float, default=0.005,
         help="target smoothing coefficient (default: 0.005)")
-    parser.add_argument("--batch-size", type=int, default=1024,
+    parser.add_argument("--batch-size", type=int, default=256,
         help="the batch size of sample from the reply memory")
-    parser.add_argument("--learning-starts", type=int, default=5000,
+    parser.add_argument("--learning-starts", type=int, default=1000,
         help="timestep to start learning")
     parser.add_argument("--policy-lr", type=float, default=1e-4,
         help="the learning rate of the policy network optimizer")
     parser.add_argument("--q-lr", type=float, default=3e-4, #1e-3,
         help="the learning rate of the Q network network optimizer")
-    parser.add_argument("--policy-frequency", type=int, default=1,
+    parser.add_argument("--policy-frequency", type=int, default=2,
         help="the frequency of training policy (delayed)")
-    parser.add_argument("--target-network-frequency", type=int, default=2, # Denis Yarats' implementation delays this by 2.
+    parser.add_argument("--target-network-frequency", type=int, default=1, # Denis Yarats' implementation delays this by 2.
         help="the frequency of updates for the target nerworks")
     parser.add_argument("--noise-clip", type=float, default=0.5,
         help="noise clip parameter of the Target Policy Smoothing Regularization")
-    parser.add_argument("--alpha", type=float, default=0.0008,
+    parser.add_argument("--alpha", type=float, default=0.2,
             help="Entropy regularization coefficient.")
-    parser.add_argument("--autotune", type=lambda x:bool(strtobool(x)), default=False, nargs="?", const=True,
+    parser.add_argument("--autotune", type=lambda x:bool(strtobool(x)), default=True, nargs="?", const=True,
         help="automatic tuning of the entropy coefficient")
     args = parser.parse_args()
     # fmt: on
@@ -160,7 +161,8 @@ def reward_mushroomrl_constr(self, next_state, action):
                 r = 2 * r_hit + 10 * r_goal
 
         r -= 1e-3 * np.linalg.norm(action)
-        r += (constraint_reward/10)
+        r = r/200
+        r += (constraint_reward/100)
 
         return r
 
@@ -254,8 +256,9 @@ def reward_mushroomrl(env,next_state, action):
 
 if __name__ == "__main__":
     args = parse_args()
-    # args = OmegaConf.load('train_sac.yaml')
-    # print(args.env_id)
+    args = OmegaConf.load('train_sac.yaml')
+   # print(args.hyperparameters)
+        # print(args.env_id)
     timestamp = time.time()
     formatted_time = time.strftime("%d-%m-%Y %H:%M", time.localtime(timestamp))
 
@@ -274,7 +277,7 @@ if __name__ == "__main__":
     # torch.backends.cudnn.deterministic = args.torch_deterministic
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
-
+    print(device, "\n \n \n")
     # env setup
     # env = make_env(args.env_id, args.seed)
     env = AirHockeyChallengeWrapper(args.env_id)
@@ -332,7 +335,7 @@ if __name__ == "__main__":
     intermediate_t=0
     rb_offline = ReplayBuffer(state_dim, action_dim, max_size=100000)
     print("populating the offline buffer:.......")
-    for i in range(10000):
+    for i in tqdm.tqdm(range(args.offline_size)):
         action = base_agent.draw_action(np.array(obs))
         next_obs, reward_, done, info = env.step(action)
         # env.render()
@@ -487,8 +490,8 @@ if __name__ == "__main__":
             if global_step % 6000 == 0:
                 agent.save(f"./models/sac_agent/sac")
                 print(f"model saved, evaluating:.....global_step = {global_step}")
-                evaluate(sac_build, "./logs", ["7dof-hit"], n_episodes=5, generate_score=None,
-                        quiet=True, render=False, interpolation_order=3)
+                #evaluate(sac_build, "./logs", ["7dof-hit"], n_episodes=5, generate_score=None,
+                #       quiet=True, render=False, interpolation_order=3)
                 
     
     agent.save(f"./models/sac_agent/sac")
