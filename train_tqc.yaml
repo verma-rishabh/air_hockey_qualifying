@@ -11,9 +11,9 @@ agent:
     top_quantiles_to_drop_per_net: 2
     n_quantiles: 25
     n_nets: 5       
-    max_episode_steps: 200
+    max_episode_steps: 500
     save_model: True     
     load_model: ""                             
     # dump_dir : /run/media/luke/Data/uni/SS2023/DL Lab/Project/qualifying/V3/tqc/hit
-    dump_dir : ./hit/v1
+    dump_dir : ./hit
     file_name : ${agent.policy}_${env}_${agent.seed}
