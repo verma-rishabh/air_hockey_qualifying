@@ -9,13 +9,12 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from omegaconf import OmegaConf
 from datetime import datetime
 import copy
-from reward import HitReward, DefendReward, PrepareReward,PrepareReward1
-from air_hockey_challenge.framework.evaluate_agent import evaluate
+from reward import HitReward, DefendReward, PrepareReward
 
 class train(AirHockeyChallengeWrapper):
-    def __init__(self, env=None, custom_reward_function=PrepareReward(), interpolation_order=1, **kwargs):
+    def __init__(self, env=None, custom_reward_function=DefendReward(), interpolation_order=1, **kwargs):
         # Load config file
-        self.conf = OmegaConf.load('train_tqc_prepare.yaml')
+        self.conf = OmegaConf.load('train_tqc_defend.yaml')
         env = self.conf.env
         # base env
         super().__init__(env, custom_reward_function,interpolation_order, **kwargs)
@@ -23,12 +22,12 @@ class train(AirHockeyChallengeWrapper):
         self.seed(self.conf.agent.seed)
         torch.manual_seed(self.conf.agent.seed)
         np.random.seed(self.conf.agent.seed)
-
+       
         self.action_shape = 3
         self.observation_shape = self.env_info["rl_info"].observation_space.shape[0]
         # policy
         self.policy = build_agent(self.env_info)
-
+       
         self.min_action = np.array([0.65,-0.40,0])
         self.max_action = np.array([1.32,0.40,1.5])
         # make dirs 
@@ -51,15 +50,14 @@ class train(AirHockeyChallengeWrapper):
         y = self.policy.get_ee_pose(state)[0][:2]
         des_v = action[2]*(x_-y)/(np.linalg.norm(x_-y)+1e-8)
         des_v = np.concatenate((des_v,[0])) 
-        
+        # _,x = inverse_kinematics(self.policy.robot_model, self.policy.robot_data,des_pos)
         _,x = solve_hit_config_ik_null(self.policy.robot_model,self.policy.robot_data, des_pos, des_v, self.policy.get_joint_pos(state))
         action = copy.deepcopy(x)
         next_state, reward, done, info = self.step(x)
-        reward += self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
+   
 
         return next_state, reward, done, info
-
-    
+        
     def make_dir(self):
         if not os.path.exists(self.conf.agent.dump_dir+"/results"):
             os.makedirs(self.conf.agent.dump_dir+"/results")
@@ -67,20 +65,7 @@ class train(AirHockeyChallengeWrapper):
         if not os.path.exists(self.conf.agent.dump_dir+"/models"):
             os.makedirs(self.conf.agent.dump_dir+"/models")
     
-    def reward_mushroomrl(self, next_state, action):
-
-        r = 0
-        
-        des_z = self.env_info['robot']['ee_desired_height']
-        tolerance = 0.02
-
-        if abs(self.policy.get_ee_pose(next_state)[0][1])>0.519:         # should replace with env variables some day
-            r -=0.1 
-        if (self.policy.get_ee_pose(next_state)[0][0])<0.536:
-            r -=0.1 
-        if (self.policy.get_ee_pose(next_state)[0][2])<des_z-tolerance or (self.policy.get_ee_pose(next_state)[0][2])>des_z+tolerance:
-            r -=0.1
-        return r
+   
 
 
 
@@ -98,22 +83,22 @@ class train(AirHockeyChallengeWrapper):
 
                 action = self.policy.select_action(state)
                 next_state, reward, done, info = self._step(state,action)
-                self.render()
+                # self.render()
                 avg_reward += reward
                 episode_timesteps+=1
                 state = next_state
             self.tensorboard.add_scalar("eval_reward", avg_reward,t+_)
         self.policy.actor.train()
-    
+  
 
     def train_model(self):
         state, done = self.reset(), False
         episode_reward = 0
         episode_timesteps = 0
         episode_num = 0
-        
+        # self.policy.actor.train()
         for t in range(int(self.conf.agent.max_timesteps)):
-    
+            self.policy.actor.train()
             critic_loss = np.nan
             actor_loss = np.nan
             alpha_loss = np.nan
@@ -156,9 +141,8 @@ class train(AirHockeyChallengeWrapper):
                 episode_num += 1 
                 
             if (t + 1) % self.conf.agent.eval_freq == 0:
-                self.eval_policy(t)
+                # self.eval_policy(t)
                 self.policy.save(self.conf.agent.dump_dir + f"/models/{self.conf.agent.file_name}")
-                
 
 x = train()
 x.train_model()

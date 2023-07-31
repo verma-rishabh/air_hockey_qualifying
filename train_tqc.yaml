@@ -11,7 +11,7 @@ agent:
     top_quantiles_to_drop_per_net: 2
     n_quantiles: 25
     n_nets: 5       
-    max_episode_steps: 250
+    max_episode_steps: 500
     save_model: True     
     load_model: ""                             
     dump_dir : ./prepare

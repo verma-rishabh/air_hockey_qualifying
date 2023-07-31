@@ -1,6 +1,6 @@
-env: 7dof-prepare
+env: 7dof-defend
 agent:
-    policy: tqc-prepare-mushroomrl               
+    policy: tqc-defend-mushroomrl               
     seed: 0              
     start_timesteps: 0
     eval_freq: 3e3
@@ -11,8 +11,8 @@ agent:
     top_quantiles_to_drop_per_net: 2
     n_quantiles: 25
     n_nets: 5       
-    max_episode_steps: 250
+    max_episode_steps: 500
     save_model: True     
     load_model: ""                             
-    dump_dir : ./prepare
+    dump_dir : ./defend
     file_name : ${agent.policy}_${env}_${agent.seed}
