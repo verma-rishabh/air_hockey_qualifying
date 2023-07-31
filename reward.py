@@ -117,7 +117,7 @@ class DefendReward:
                 dist_ee_puck = ee_des - ee_pos
                 r = - np.linalg.norm(dist_ee_puck)
 
-        r += constraint_reward
+        r += constraint_reward/10
         return r
 
 
