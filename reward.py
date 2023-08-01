@@ -61,8 +61,9 @@ class HitReward:
                     r += 0.5 - np.abs(puck_pos[1])
 
                 # penalizes the joint velocity
-                #q = mdp.get_joints(next_state, 1)[0]
-                #r -= 0.01 * np.linalg.norm(q - mdp.init_state)
+                q = mdp.get_joints(next_state, 1)[0]
+                r -= 0.01 * np.linalg.norm(q - mdp.init_state)
+        r -= np.clip(np.abs(mdp.get_ee()[0][2])*10,0,1)
         # print(r)
         q = next_state[mdp.env_info['joint_pos_ids']]
         dq = next_state[mdp.env_info['joint_vel_ids']]
