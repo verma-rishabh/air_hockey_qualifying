@@ -5,7 +5,7 @@ agent:
     start_timesteps: 0
     eval_freq: 3e3
     max_timesteps: 5e7     
-    batch_size: 1024
+    batch_size: 256
     discount: 0.99             
     tau: 0.005
     top_quantiles_to_drop_per_net: 2

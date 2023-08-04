@@ -7,7 +7,7 @@ from air_hockey_agent.agent_builder_tqc import build_agent
 from utils import ReplayBuffer, solve_hit_config_ik_null
 from torch.utils.tensorboard.writer import SummaryWriter
 from omegaconf import OmegaConf
-# from air_hockey_challenge.utils.kinematics import inverse_kinematics, jacobian
+from air_hockey_challenge.utils.kinematics import inverse_kinematics, jacobian
 from datetime import datetime
 import copy
 from reward import HitReward, DefendReward, PrepareReward
@@ -56,8 +56,8 @@ class train(AirHockeyChallengeWrapper):
         y = self.policy.get_ee_pose(state)[0][:2]
         des_v = action[2]*(x_-y)/(np.linalg.norm(x_-y)+1e-8)
         des_v = np.concatenate((des_v,[0])) 
-        # _,x = inverse_kinematics(self.policy.robot_model, self.policy.robot_data,des_pos)
-        _,x = solve_hit_config_ik_null(self.policy.robot_model,self.policy.robot_data, des_pos, des_v, self.policy.get_joint_pos(state))
+        _,x = inverse_kinematics(self.policy.robot_model, self.policy.robot_data,des_pos)
+        # _,x = solve_hit_config_ik_null(self.policy.robot_model,self.policy.robot_data, des_pos, des_v, self.policy.get_joint_pos(state))
         action = copy.deepcopy(x)
         next_state, reward, done, info = self.step(x)
         # reward = self.reward_mushroomrl(copy.deepcopy(next_state),copy.deepcopy(action)) 
@@ -181,7 +181,7 @@ class train(AirHockeyChallengeWrapper):
 
                 action = self.policy.select_action(state)
                 next_state, reward, done, info = self._step(state,action)
-                self.render()
+                # self.render()
                 avg_reward += reward
                 episode_timesteps+=1
                 state = next_state
